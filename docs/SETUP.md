@@ -24,16 +24,84 @@ pnpm --version       # 9.x.x
 
 ---
 
-## 2. สร้างบอทใน Telegram
+## 2. สร้างบอทกับ BotFather
+
+### 2.1 สร้างบอทใหม่
 
 1. เปิด Telegram → คุยกับ [@BotFather](https://t.me/BotFather)
 2. ส่ง `/newbot`
-3. ตอบชื่อบอท (display name) เช่น `My VaultLink`
-4. ตอบ username (ต้องลงท้าย `bot`) เช่น `my_vaultlink_bot`
-5. BotFather จะส่ง **token** มาให้หน้าตาแบบ `8729457750:AAH...` — copy เก็บไว้
-6. (แนะนำ) ส่ง `/setdescription` `/setabouttext` `/setuserpic` เพื่อแต่งหน้าโปรไฟล์บอท
+3. ตอบชื่อบอท (display name) เช่น `My VaultLink` — เปลี่ยนภายหลังได้ผ่าน `/setname`
+4. ตอบ username (ต้องลงท้าย `bot` หรือ `_bot`) เช่น `my_vaultlink_bot` — **เปลี่ยนไม่ได้** เลือกให้ดี
+5. BotFather จะส่ง **token** หน้าตาแบบ `8729457750:AAH...` มาให้ — copy ไปใส่ `MAIN_BOT_TOKEN` ใน `.env`
 
-> ถ้า token หลุดให้รีบเปลี่ยน: `/mybots` → เลือกบอท → **API Token** → **Revoke current token** ระบบจะออก token ใหม่ ตัวเก่าจะใช้ไม่ได้ทันที
+### 2.2 แต่งหน้าโปรไฟล์บอท
+
+คำสั่งใน BotFather (ส่งทีละบรรทัด):
+
+| คำสั่ง            | ใช้ทำ                                                             |
+| ----------------- | ----------------------------------------------------------------- |
+| `/setname`        | เปลี่ยนชื่อที่แสดง                                                |
+| `/setdescription` | คำอธิบายในหน้าก่อนกด `/start` (ภาพใหญ่ ตัวเทา) — ภาษาไทยได้       |
+| `/setabouttext`   | bio สั้นในการ์ดโปรไฟล์ (ที่กดดูใต้ avatar) — สั้นกว่า description |
+| `/setuserpic`     | อัปโหลดรูปโปรไฟล์ (square 640x640 ขึ้นไป)                         |
+| `/setbotpic`      | alias ของ `/setuserpic`                                           |
+
+ตัวอย่างข้อความที่ผมใช้:
+
+```
+/setdescription
+VaultLink — เปลี่ยนไฟล์ Telegram เป็นรหัสแชร์ที่ควบคุมเองได้
+รหัสรหัสเดียวจะ resolve เป็นไฟล์เดียวหรือชุดสื่อทั้งคอลเลคชัน
+ทุกอย่างจัดการในแชท ไม่ต้องเปิด web admin
+```
+
+```
+/setabouttext
+Secure file shares with codes you control.
+```
+
+### 2.3 ตั้งค่าพฤติกรรมบอท
+
+| คำสั่ง               | ค่าที่แนะนำสำหรับ VaultLink | เหตุผล                                                                           |
+| -------------------- | --------------------------- | -------------------------------------------------------------------------------- |
+| `/setjoingroups`     | `Disable`                   | บอทออกแบบสำหรับ DM ไม่ใช่งานในกลุ่ม                                              |
+| `/setprivacy`        | `Enable`                    | ถ้าวันหนึ่งใส่ในกลุ่มจริง บอทจะเห็นแค่ข้อความที่ขึ้นต้นด้วย `/` หรือ reply หาบอท |
+| `/setinline`         | (ข้าม)                      | บอทไม่ใช้ inline mode                                                            |
+| `/setinlinefeedback` | (ข้าม)                      | ใช้คู่กับ inline                                                                 |
+
+> หลังเปลี่ยน `/setprivacy` ต้อง remove บอทออกจากกลุ่มแล้วเพิ่มกลับเข้าใหม่ค่าจะ apply
+
+### 2.4 รายการคำสั่งใน menu (auto-sync)
+
+**ไม่ต้อง** เรียก `/setcommands` ใน BotFather — บอทรัน `setMyCommands` ให้อัตโนมัติทุกครั้งที่ boot รายการคำสั่งสาธารณะมาจาก `src/bot/commands.ts`:
+
+```
+/start    เปิดเมนูหลัก / Open main menu
+/help     วิธีใช้งาน / How to use
+/new      สร้างรหัสแชร์ / Create a share
+/files    ไฟล์ของฉัน / My files
+/bots     บอทส่วนตัว / My bots
+/settings ตั้งค่า / Settings
+/cancel   ยกเลิก / Cancel
+```
+
+`/admin` register แบบ chat-scope ให้เฉพาะ user ID ที่อยู่ใน `ADMIN_IDS` — คนอื่นจะไม่เห็นใน menu (แม้พิมพ์เองก็โดน auth ปฏิเสธ)
+
+ถ้าต้องการเปลี่ยนรายการคำสั่งให้แก้ในไฟล์โค้ด ห้ามแก้ใน BotFather — ทุก restart มันจะ overwrite
+
+### 2.5 จัดการ token
+
+- **Revoke token** (กรณี leak): `/mybots` → เลือกบอท → **API Token** → **Revoke current token** — token เก่าจะ 401 ทันที, ของใหม่ออกมาแทน
+- **ห้ามเขียน token ลง git** — `.env` อยู่ใน `.gitignore` แล้ว ตรวจอีกทีก่อน push: `git status` ต้องไม่เห็น `.env`
+- **Production** ใช้ environment variable ของระบบ deploy (Docker compose `environment:`, systemd `EnvironmentFile=`, etc) ไม่ต้อง mount `.env` ถ้าเลี่ยงได้
+
+### 2.6 ลบบอท / เปลี่ยน owner
+
+| คำสั่ง       | ใช้ตอนไหน                                             |
+| ------------ | ----------------------------------------------------- |
+| `/deletebot` | ลบบอททิ้งถาวร username จะถูกล็อก 7 วันก่อนใช้ใหม่ได้  |
+| `/transfer`  | โอน owner ไปบัญชี Telegram อื่น (ผ่าน BotFather flow) |
+| `/cancel`    | ยกเลิก operation BotFather ที่กำลังทำอยู่             |
 
 ---
 
@@ -167,13 +235,43 @@ restart `pnpm dev` (config อ่านครั้งเดียวตอน b
 
 ### 8.3 ตั้ง Menu Button ใน BotFather
 
+ใช้ flow แบบ click-through:
+
 1. `/mybots` → เลือกบอท → **Bot Settings** → **Menu Button** → **Configure Menu Button**
 2. ใส่ URL ngrok (เหมือนใน `.env`)
-3. ตั้งชื่อปุ่ม เช่น `เปิดแอป`
+3. ตั้งชื่อปุ่ม เช่น `เปิดแอป` (สูงสุด 14 ตัวอักษร)
 
-เปิดแชทบอท → ปุ่ม menu จะมีให้กด → เปิด WebApp พร้อม `initData` → API auth ผ่าน ✅
+หรือใช้คำสั่งตรงๆ:
+
+```
+/setmenubutton
+```
+
+แล้วเลือกบอท → ตอบ URL → ตอบชื่อปุ่ม
+
+เปิดแชทบอท → ปุ่ม menu (รูป hamburger ☰ ข้างกล่องพิมพ์) จะมีให้กด → เปิด WebApp พร้อม `initData` → API auth ผ่าน ✅
 
 > ngrok free tier มีหน้าเตือน "You are about to visit..." ครั้งแรก กดผ่านได้ ถ้าใช้บ่อยให้สมัคร authtoken หรือเปลี่ยนไปใช้ cloudflared
+
+### 8.4 ทางเลือก: Direct Link Mini App (ลิงก์เปิด WebApp ตรงๆ)
+
+ถ้าอยากมี short link `https://t.me/<bot>/<app>` ที่เปิด Mini App โดยไม่ต้องผ่าน menu button:
+
+1. ใน BotFather ส่ง `/newapp`
+2. เลือกบอท
+3. ตั้ง title (display ในหน้าเปิด), description, photo, GIF/screenshot (optional)
+4. ตอบ short name เช่น `vault` → ลิงก์จะเป็น `https://t.me/<bot>/vault`
+5. ใส่ Web App URL เป็น URL ngrok เดียวกัน
+
+จัดการแอปที่ตั้งไว้: `/myapps` → เลือก app → edit / delete
+
+> Direct Link Mini App ไม่จำเป็นถ้าใช้ menu button แต่สะดวกถ้าต้องการแชร์ลิงก์ให้คนอื่นเปิดตรงเข้าแอป
+
+### 8.5 Domain whitelist (ถ้าใช้ Login Widget)
+
+ตอนนี้ VaultLink ไม่ใช้ Telegram Login Widget (auth ผ่าน Mini App initData ล้วน) ส่วน `/setdomain` จึงไม่จำเป็น เก็บไว้อ้างอิงเผื่ออนาคต:
+
+- `/setdomain` → กำหนดโดเมนที่เปิด Login Widget ได้ — ทุก subdomain ของโดเมนนี้ผ่านได้
 
 ---
 
@@ -277,3 +375,111 @@ docker compose logs -f
 | `pnpm start`                        | รันจาก `dist/` (production-style ใน local)     |
 
 ทุกคำสั่งโหลด `.env` ผ่าน `--env-file` ของ Node 20 ยกเว้น `test` (vitest จัดการ env เอง) และ `build` (ไม่ต้องอ่าน env)
+
+---
+
+## 13. ภาคผนวก: BotFather cheat sheet
+
+คำสั่งทั้งหมดที่ใช้กับ [@BotFather](https://t.me/BotFather) เรียงตามวงจรชีวิตบอท
+
+### สร้าง / ลบ
+
+| คำสั่ง       | ผล                                        |
+| ------------ | ----------------------------------------- |
+| `/newbot`    | สร้างบอทใหม่ ได้ token                    |
+| `/mybots`    | list บอทที่ถือไว้ + เมนูจัดการของแต่ละตัว |
+| `/deletebot` | ลบบอทถาวร username ล็อก 7 วัน             |
+| `/transfer`  | โอน owner ไปบัญชีอื่น                     |
+| `/cancel`    | ยกเลิก operation BotFather ที่กำลังทำอยู่ |
+
+### โปรไฟล์
+
+| คำสั่ง            | ผล                                                        |
+| ----------------- | --------------------------------------------------------- |
+| `/setname`        | เปลี่ยน display name (เปลี่ยนได้ตลอด ไม่เกิน 64 ตัวอักษร) |
+| `/setdescription` | คำอธิบายในหน้าก่อน `/start` (สูงสุด 512 ตัวอักษร)         |
+| `/setabouttext`   | bio สั้นในการ์ดโปรไฟล์ (สูงสุด 120 ตัวอักษร)              |
+| `/setuserpic`     | รูปโปรไฟล์ (square ≥ 640x640)                             |
+
+### พฤติกรรม
+
+| คำสั่ง               | ผล                                                                  | แนะนำสำหรับ VaultLink |
+| -------------------- | ------------------------------------------------------------------- | --------------------- |
+| `/setjoingroups`     | อนุญาต/ห้ามเพิ่มบอทเข้ากลุ่ม                                        | **Disable**           |
+| `/setprivacy`        | ในกลุ่ม บอทเห็นแค่ command/reply (Enable) หรือทุก message (Disable) | **Enable**            |
+| `/setinline`         | เปิด inline mode (`@bot query`) + ตั้ง placeholder                  | ปิด                   |
+| `/setinlinegeo`      | เปิดส่ง location จาก inline                                         | ปิด                   |
+| `/setinlinefeedback` | รับ chosen_inline_result update                                     | ปิด                   |
+
+### คำสั่งใน menu
+
+| คำสั่ง         | ผล                                                                               |
+| -------------- | -------------------------------------------------------------------------------- |
+| `/setcommands` | ตั้งรายการคำสั่งที่ขึ้นใน menu **— VaultLink sync ให้อัตโนมัติ ไม่ต้องเรียกเอง** |
+| `/mycommands`  | ดูรายการคำสั่งปัจจุบัน                                                           |
+
+### Mini App / WebApp
+
+| คำสั่ง           | ผล                                                             |
+| ---------------- | -------------------------------------------------------------- |
+| `/setmenubutton` | ตั้งปุ่ม WebApp ให้ติดข้างกล่องพิมพ์ — ใส่ HTTPS URL           |
+| `/newapp`        | สร้าง Direct Link Mini App (`t.me/<bot>/<short>`)              |
+| `/myapps`        | จัดการ Mini App ที่ตั้งไว้ (edit/delete)                       |
+| `/editapp`       | แก้ Mini App ที่มีอยู่ (title, description, photo, URL)        |
+| `/deleteapp`     | ลบ Mini App                                                    |
+| `/setdomain`     | กำหนดโดเมนของ Telegram Login Widget (VaultLink ไม่ใช้ ข้ามได้) |
+
+### Token / payment
+
+| คำสั่ง        | ผล                                                       |
+| ------------- | -------------------------------------------------------- |
+| `/token`      | ดู token ปัจจุบัน                                        |
+| `/revoke`     | revoke token เก่าออก token ใหม่ — token เก่ากลายเป็น 401 |
+| `/setpayment` | ผูก payment provider (VaultLink ไม่ใช้)                  |
+
+> ทุกคำสั่งของ BotFather ทำงานแบบ guided — กด/พิมพ์คำสั่ง → BotFather ถามทีละ step คำสั่งเยอะที่สุดที่ต้องจำคือ `/mybots` แล้วกดเมนูเอา
+
+---
+
+## 14. ภาคผนวก: Webhook vs Long polling
+
+VaultLink รัน **long polling** (`getUpdates`) ผ่าน `@grammyjs/runner` ตลอดในทั้ง dev และ Docker — ไม่ใช้ webhook เลย เหตุผล:
+
+- ไม่ต้องเปิด port public, ไม่ต้องมี HTTPS reverse proxy
+- รันหลังบ้าน home network ก็ได้
+- Single-process model ทำให้ logic ง่าย และ throttle/retry คาดเดาได้
+
+ผลตามมา:
+
+- **บอท 1 token รันได้แค่ 1 instance พร้อมกัน** ถ้ารันสองที่ตัวที่สองจะโดน 409 Conflict (ดูข้อ 10)
+- ห้ามใช้ webhook พร้อม polling — ถ้าเคยตั้ง webhook ไว้ต้องลบก่อน:
+  ```
+  https://api.telegram.org/bot<TOKEN>/deleteWebhook?drop_pending_updates=true
+  ```
+
+ถ้าวันหนึ่งจะย้ายไป webhook (เช่น deploy บน Cloudflare Workers): ต้องเขียน HTTP handler ใหม่และเรียก `setWebhook` ตอน deploy ข้อมูลและ schema ของ DB ใช้ได้ตามเดิม
+
+---
+
+## 15. ภาคผนวก: Telegram Bot API limits ที่กระทบโปรเจกต์
+
+ค่าทั้งหมดเป็น default ของ Bot API cloud ปรับได้ผ่าน env (ดู section "Telegram API limits" ใน `.env.example`):
+
+| รายการ                                      | Limit            | ตัวแปร env ที่เกี่ยวข้อง                                                  |
+| ------------------------------------------- | ---------------- | ------------------------------------------------------------------------- |
+| ส่ง message ทั่วโลกจาก bot                  | 30 / วินาที      | `TELEGRAM_GLOBAL_RATE_LIMIT_PER_SEC`                                      |
+| ส่งใน chat เดียวกัน (DM)                    | 1 / วินาที       | `TELEGRAM_PER_CHAT_RATE_LIMIT_PER_SEC`                                    |
+| ส่งในกลุ่ม / ช่อง                           | 20 / นาที        | `TELEGRAM_PER_GROUP_RATE_LIMIT_PER_MIN`                                   |
+| ความยาว message                             | 4,096 ตัวอักษร   | `TELEGRAM_MESSAGE_MAX_LENGTH`                                             |
+| Media group                                 | 10 รายการ        | `TELEGRAM_MEDIA_GROUP_MAX_ITEMS`                                          |
+| Inline keyboard                             | สูงสุด 100 ปุ่ม  | `TELEGRAM_INLINE_KEYBOARD_MAX_BUTTONS`                                    |
+| ขนาดปุ่มต่อแถว                              | 8 ปุ่ม           | `TELEGRAM_INLINE_KEYBOARD_MAX_ROW_WIDTH`                                  |
+| `callback_data`                             | 64 bytes         | `TELEGRAM_CALLBACK_DATA_MAX_BYTES`                                        |
+| Long poll timeout                           | 50 วินาที (≤ 50) | `TELEGRAM_LONG_POLL_TIMEOUT_SECONDS`                                      |
+| ขนาดไฟล์ที่ bot **อัปโหลด** ส่งให้ user     | 50 MB            | (ฝั่ง Telegram bound — สูงกว่านี้ต้อง local Bot API server)               |
+| ขนาดไฟล์ที่ bot **ดาวน์โหลดผ่าน `getFile`** | 20 MB            | (ของจริงไฟล์ใหญ่กว่านี้ใช้ได้ผ่าน file_id แต่ทำต่อใน bot ไม่ได้)          |
+| Auto retry เมื่อโดน 429                     | สูงสุด 5 ครั้ง   | `TELEGRAM_AUTORETRY_MAX_ATTEMPTS`, `TELEGRAM_AUTORETRY_MAX_DELAY_SECONDS` |
+
+`MAX_FILE_SIZE_MB` (default 50) ของโปรเจกต์เป็น cap ที่บอทบังคับอีกชั้น — ถ้าตั้งเกิน Telegram limit จะส่งไม่ได้แม้ผ่าน validation
+
+> ถ้าต้องการ bypass 50 MB limit (เช่น share clip ขนาดใหญ่) ต้อง host **Local Bot API Server** เอง: <https://github.com/tdlib/telegram-bot-api> — `TELEGRAM_API_BASE_URL` รองรับชี้ไป local server ได้ทันที
