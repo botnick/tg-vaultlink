@@ -176,6 +176,12 @@ export async function startApp(): Promise<AppHandle> {
     } catch (err) {
       log.warn({ err }, 'preflight deleteWebhook failed (probably no webhook set)');
     }
+    // The probe deliberately uses a non-zero timeout. timeout=0 short polling
+    // does NOT compete for the long-poll lock — Telegram accepts it alongside
+    // a pending long-poll, so we'd see "OK" here and then 409 the moment the
+    // runner asks for timeout=50. A 2s probe actually contends for the lock,
+    // so 409 surfaces during preflight and we can retry until it clears.
+    const probeTimeoutSec = 2;
     const maxWaitMs = (config.TELEGRAM_LONG_POLL_TIMEOUT_SECONDS + 10) * 1000;
     const start = Date.now();
     let attempts = 0;
@@ -183,7 +189,11 @@ export async function startApp(): Promise<AppHandle> {
     while (!cleared) {
       attempts++;
       try {
-        await main.bot.api.getUpdates({ timeout: 0, offset: -1, limit: 1 });
+        await main.bot.api.getUpdates({
+          timeout: probeTimeoutSec,
+          offset: -1,
+          limit: 1,
+        });
         if (attempts > 1) {
           log.info({ attempts }, 'poll lock cleared');
         }
@@ -192,10 +202,16 @@ export async function startApp(): Promise<AppHandle> {
         const code = (err as { error_code?: number }).error_code;
         if (code === 409 && Date.now() - start < maxWaitMs) {
           log.info({ attempts }, 'waiting for stale getUpdates lock to expire');
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          continue;
+          continue; // probe itself already burned `probeTimeoutSec` seconds
         }
-        log.warn({ err, attempts }, 'poll lock preflight gave up; starting anyway');
+        if (code === 409) {
+          log.error(
+            { attempts, waitedMs: Date.now() - start },
+            'poll lock still held after full timeout window — another deployment of this bot token is polling Telegram. Either kill it or switch to TELEGRAM_UPDATE_MODE=webhook.',
+          );
+        } else {
+          log.warn({ err, attempts }, 'poll lock preflight failed; starting anyway');
+        }
         break;
       }
     }
@@ -220,19 +236,20 @@ export async function startApp(): Promise<AppHandle> {
           log.warn({ err }, 'failed to stop runner');
         }
       }
-      // Graceful release: tell Telegram we've consumed up to lastAckedUpdateId.
-      // This closes the server-side long-poll session immediately so a
-      // restart within the next second succeeds — instead of hitting 409
-      // until the previous timeout expires.
+      // Graceful release. Telegram's API contract: a getUpdates call with
+      // `offset=-1` is the "I'm done, forget any previous getUpdates" signal
+      // — per docs "All previous updates will be forgotten". Combined with
+      // the `lastAckedUpdateId+1` hint we also pass the latest offset we
+      // saw so Telegram doesn't redeliver anything we already handled.
       try {
         await main.bot.api.getUpdates({
-          offset: lastAckedUpdateId + 1,
+          offset: lastAckedUpdateId > 0 ? lastAckedUpdateId + 1 : -1,
           timeout: 0,
           limit: 1,
         });
       } catch {
-        // Best-effort. If this fails the preflight retry on the next boot
-        // still recovers within ~50s.
+        // Best-effort. If this fails the next-boot preflight still recovers
+        // within TELEGRAM_LONG_POLL_TIMEOUT_SECONDS.
       }
     };
   }

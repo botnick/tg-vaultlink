@@ -22,6 +22,9 @@ VaultLink turns any file or media bundle uploaded through Telegram into a short,
 - Telegram Mini App: Files, Bots, Settings, Admin Dashboard, Reports, Audit Logs
 - Bilingual UX (Thai default, English) — every user-visible string lives in locale JSON
 - Production-grade concurrency: throttler + auto-retry transformer + grammY runner with per-user serialization
+- **Two transport modes** — long polling (default, no public IP needed) or webhook (Telegram POSTs to a single Hono listener, optional `secret_token` header check); switch by editing `TELEGRAM_UPDATE_MODE` in `.env`
+- **Self-healing main bot row** — on every successful boot the encrypted token is re-synced from `.env`, `status` is reset to `active`, and `last_error` is cleared, so token regen / past 401s recover with `pnpm dev` instead of `db:reset`
+- **High-throughput SQLite tuning** out of the box (32 MB page cache, 128 MB mmap window, WAL auto-checkpoint at 1000 pages, `PRAGMA optimize` on close) — fits a 1 GB container while serving thousands of concurrent users
 
 ## Requirements
 
@@ -57,8 +60,11 @@ The compose file mounts `./data` so the SQLite database survives container resta
 ## BotFather setup
 
 1. In [@BotFather](https://t.me/BotFather), run `/newbot` to create your main bot. Paste the token into `MAIN_BOT_TOKEN`.
-2. (Optional, for Mini App UX) Run `/setdomain` and provide the public HTTPS host that serves the Mini App frontend, then `/setmenubutton` and supply the same URL — this enables the Telegram menu-button entry into the Mini App.
-3. (Optional) Run `/setinline` if you want inline-mode hints later. The base bot does not depend on inline mode.
+2. (Recommended) Tighten group behaviour: `/setjoingroups` → **Disable** and `/setprivacy` → **Enable**. The bot is designed for DMs.
+3. (Optional, for Mini App UX) Run `/setmenubutton` and provide the public HTTPS Mini App URL — this surfaces the Mini App from the bot's menu. Skip `/setdomain`; VaultLink does not use Telegram's Login Widget.
+4. **Do not** call `/setcommands` manually. The bot calls `setMyCommands` itself on every boot from `src/bot/commands.ts`, so a manual list would be overwritten.
+
+For a step-by-step BotFather tour (`/newbot`, profile fields, behavior toggles, Mini App via `/newapp`, token revoke), see [`docs/SETUP.md`](./docs/SETUP.md).
 
 ## Environment variables
 
@@ -124,16 +130,25 @@ The variables below are the complete set declared in `src/config/env.ts` and mir
 | `AUTO_LOCK_REPORT_THRESHOLD` | `3`                                  | yes      | Number of pending reports that triggers auto-lock; bounded `>= 1`.                                   |
 | `DEFAULT_FILE_EXPIRY_DAYS`   | `0`                                  | yes      | `0` disables expiry; otherwise the default lifetime in days.                                         |
 
-### Polling and feature flags
+### Update channel
 
-| Name                          | Default                  | Required | Description                                                                                                                                    |
-| ----------------------------- | ------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BOT_POLLING_ALLOWED_UPDATES` | `message,callback_query` | yes      | Comma-separated allowed update types. Permitted values: `message`, `callback_query`, `edited_message`, `inline_query`, `chosen_inline_result`. |
-| `ENABLE_PASSWORD_PROTECTION`  | `true`                   | yes      | Toggle file passwords.                                                                                                                         |
-| `ENABLE_FILE_EXPIRY`          | `true`                   | yes      | Toggle file expiry.                                                                                                                            |
-| `ENABLE_REPORTS`              | `true`                   | yes      | Toggle the report flow.                                                                                                                        |
-| `ENABLE_CHILD_BOTS`           | `true`                   | yes      | Toggle `/add_bot*`.                                                                                                                            |
-| `ENABLE_ADMIN_BROADCAST`      | `false`                  | yes      | Toggle the broadcast admin command.                                                                                                            |
+| Name                          | Default                  | Required                                 | Description                                                                                                                                                                           |
+| ----------------------------- | ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TELEGRAM_UPDATE_MODE`        | `long_poll`              | yes                                      | One of `long_poll` (bot polls Telegram, works behind any NAT) or `webhook` (Telegram POSTs into our Hono listener; needs public HTTPS).                                               |
+| `WEBHOOK_BASE_URL`            | —                        | only when `TELEGRAM_UPDATE_MODE=webhook` | Public `https://` URL that reaches this process (or its reverse proxy). Each managed bot is registered at `<WEBHOOK_BASE_URL>/webhook/<telegram_bot_id>`.                             |
+| `WEBHOOK_PORT`                | `8443`                   | yes                                      | Local TCP port for the Hono listener; bounded `1..65535`. Telegram-allowed default ports are `80`, `88`, `443`, and `8443` (or any port if you reverse-proxy 443 down to it).         |
+| `WEBHOOK_SECRET_TOKEN`        | —                        | optional                                 | Echoed back by Telegram in the `X-Telegram-Bot-Api-Secret-Token` header so the listener can reject forged calls. Alphabet `A-Za-z0-9_-`, length `1..256`. Highly recommended in prod. |
+| `BOT_POLLING_ALLOWED_UPDATES` | `message,callback_query` | yes                                      | Comma-separated allowed update types. Permitted values: `message`, `callback_query`, `edited_message`, `inline_query`, `chosen_inline_result`.                                        |
+
+### Feature flags
+
+| Name                         | Default | Required | Description                         |
+| ---------------------------- | ------- | -------- | ----------------------------------- |
+| `ENABLE_PASSWORD_PROTECTION` | `true`  | yes      | Toggle file passwords.              |
+| `ENABLE_FILE_EXPIRY`         | `true`  | yes      | Toggle file expiry.                 |
+| `ENABLE_REPORTS`             | `true`  | yes      | Toggle the report flow.             |
+| `ENABLE_CHILD_BOTS`          | `true`  | yes      | Toggle `/add_bot*`.                 |
+| `ENABLE_ADMIN_BROADCAST`     | `false` | yes      | Toggle the broadcast admin command. |
 
 ### Health server
 
@@ -247,6 +262,8 @@ Outbound Telegram traffic flows through three stacked layers: the `@grammyjs/tra
 
 A single Node process running with these defaults comfortably serves thousands of concurrent users on a small VPS.
 
+The SQLite layer is also tuned for this profile out of the box — `cache_size=-32000` (32 MB page cache), `temp_store=MEMORY`, `mmap_size=128MB`, `wal_autocheckpoint=1000`, `journal_size_limit=64MB`, plus `PRAGMA optimize` on shutdown to keep query-planner stats fresh across restarts. These are conservative enough to fit a 1 GB container without swapping the planner under sustained load. Bump them in your own deployment fork if your host has spare RAM and you measure real win.
+
 ## Backup guide
 
 The simplest backup is to **stop the bot** and copy the SQLite WAL set:
@@ -332,16 +349,19 @@ tests/            # vitest suite
 ## Troubleshooting
 
 - **Bot won't start.** Re-check `MAIN_BOT_TOKEN` matches the Telegram regex (`<digits>:<30+ chars>`). Verify `TOKEN_ENCRYPTION_KEY` decodes to exactly 32 bytes; regenerate with `pnpm generate:key`. Confirm `DATABASE_PATH` resolves to a directory the process can write to.
+- **`409 Conflict: terminated by other getUpdates request`.** Long-poll lock is held by another instance of this bot. The bootstrap calls `getUpdates(timeout=0, offset=-1)` and retries until the lock clears, and the shutdown path acks the latest offset to release the lock immediately — so a normal `Ctrl+C` → restart is sub-second. If the 409 sticks, you have **another deployment of the same token** somewhere (other host, container, cron); kill it or `/revoke` the token in BotFather. Switching to `TELEGRAM_UPDATE_MODE=webhook` sidesteps the polling lock entirely.
+- **`401 Unauthorized` after token regen.** Update `MAIN_BOT_TOKEN` in `.env` and restart. The boot path self-heals the `managed_bots` row (re-encrypts the token, resets `status='active'`, clears `last_error`) — no `db:reset`, no manual SQL.
 - **`429 Too Many Requests` in logs.** Raise the throttler ceilings (`TELEGRAM_GLOBAL_RATE_LIMIT_PER_SEC`, etc.). The auto-retry transformer already honors Telegram's `retry_after`, so most 429s self-heal — sustained 429s indicate a misconfigured ceiling.
 - **Mini App says "Open inside Telegram".** Expected behaviour: the frontend guards against being opened in a regular browser. Open it from a `WebApp` button or the bot's menu-button entry inside Telegram.
 - **Migrations fail.** In dev, `pnpm db:reset` drops and re-applies. The reset path **refuses to run in production** as a safety net — never `rm` the SQLite file in prod without a backup.
 
 ## Roadmap
 
-- Webhook mode (alternative to long polling)
-- S3 / object-storage file proxy for very large media
+- S3 / object-storage file proxy for very large media (currently capped at Telegram's 50 MB bot upload ceiling)
 - Additional locales beyond Thai and English
 - Optional Postgres backend for multi-instance deployments
+- `TOKEN_ENCRYPTION_KEY` rotation tool (re-encrypts every `managed_bots` row)
+- Configurable retention for `audit_logs` and `file_access_logs`
 
 ## License
 

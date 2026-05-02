@@ -20,7 +20,9 @@ pnpm dev                       # runs the bot under tsx watch
 pnpm --dir apps/mini-app dev   # runs the Mini App frontend on Vite
 ```
 
-If you're working on the Mini App, also copy `apps/mini-app/.env.example` to `apps/mini-app/.env` and fill in the bot username plus the local API base URL (defaults to `http://localhost:8081/api/v1`).
+If you're working on the Mini App, also copy `apps/mini-app/.env.example` to `apps/mini-app/.env` and fill in the bot username. `VITE_API_BASE_URL` defaults to `/api/v1` (relative) — the Vite dev server proxies `/api` and `/healthz` to `127.0.0.1:8081`, which means the same value works behind any reverse proxy or HTTPS tunnel.
+
+For the end-to-end bring-up — BotFather setup, encryption keys, ngrok / cloudflared for the Mini App, and the 409 / 401 / port-conflict recipes — see [`docs/SETUP.md`](./docs/SETUP.md) (Thai).
 
 ## Branching
 

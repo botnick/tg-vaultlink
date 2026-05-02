@@ -37,9 +37,10 @@ If a fix is not feasible inside 90 days, we will reach out to extend the embargo
 
 - **Bot tokens at rest.** Stored bot tokens (main and child) are encrypted with **AES-256-GCM** using a key supplied only via the `TOKEN_ENCRYPTION_KEY` environment variable. A fresh random 12-byte nonce is generated per record and stored alongside the ciphertext and auth tag in `managed_bots`.
 - **Mini App authentication.** The Hono API authenticates exclusively via Telegram `initData`: `secret_key = HMAC-SHA256("WebAppData", BOT_TOKEN)`, `signature = HMAC-SHA256(secret_key, data_check_string)`. Comparison is constant-time and the `auth_date` field must be within `MINI_APP_INITDATA_MAX_AGE_SECONDS`. There are no browser cookies, no shared sessions, and no fall-through paths.
+- **Webhook authentication (when `TELEGRAM_UPDATE_MODE=webhook`).** The Hono webhook listener verifies Telegram's `X-Telegram-Bot-Api-Secret-Token` header against `WEBHOOK_SECRET_TOKEN` via grammY's `webhookCallback`. Requests missing the header (or carrying a stale value) are rejected with 401 before the bot dispatcher ever sees them. Routing is by numeric `telegram_bot_id` to keep the URL space opaque, and the listener returns 404 for unknown ids without distinguishing them from "id never existed" responses.
 - **Admin gate.** Admin endpoints and commands check both the `super_admin` role (persisted in `users.role`) and membership in `ADMIN_IDS` from the env. Either alone is sufficient; neither bypasses logging.
 - **Logger redaction.** The pino logger is configured with redaction patterns that strip `token`, `password`, `Authorization`, and other secret-shaped fields before any log line leaves the process.
-- **Strict env validation.** The startup config loader (`src/config/env.ts`) validates every variable with zod; missing or malformed values cause a fail-fast `AppError(CONFIG_INVALID)` whose message replaces secret fields with `<redacted>`.
+- **Strict env validation.** The startup config loader (`src/config/env.ts`) validates every variable with zod; missing or malformed values cause a fail-fast `AppError(CONFIG_INVALID)` whose message replaces secret fields with `<redacted>`. Webhook-mode validation also enforces `https://` for `WEBHOOK_BASE_URL` and Telegram's secret-token alphabet (`[A-Za-z0-9_-]{1,256}`) for `WEBHOOK_SECRET_TOKEN`.
 
 ## Threat model — what is NOT covered
 
@@ -51,7 +52,9 @@ If a fix is not feasible inside 90 days, we will reach out to extend the embargo
 ## Operational security recommendations
 
 - Treat `.env` as a **secret**. Never commit it; never paste it into logs or chats.
-- **Rotate `TOKEN_ENCRYPTION_KEY` carefully.** Rotation requires re-encrypting every `managed_bots.encrypted_token` row with the new key. **No migration helper exists yet**; until one ships, plan rotations as a maintenance window: stop the bot, re-encrypt offline, restart with the new key.
+- **Rotate `TOKEN_ENCRYPTION_KEY` carefully.** Rotation requires re-encrypting every `managed_bots.encrypted_token` row with the new key. **No migration helper exists yet**; until one ships, plan rotations as a maintenance window: stop the bot, re-encrypt offline, restart with the new key. The main bot's row self-heals from `.env` on every boot, so only child-bot rows need offline re-encryption.
+- **Always set `WEBHOOK_SECRET_TOKEN`** when running in webhook mode. Without it, anyone who learns your `WEBHOOK_BASE_URL` can POST forged updates straight to your handler. Generate ≥ 32 random bytes (`openssl rand -base64 32` then strip `=` `+` `/` to fit Telegram's alphabet, or just pull characters from `[A-Za-z0-9_-]`).
+- **Terminate TLS in front of the webhook listener.** The bundled Hono server speaks plain HTTP on `WEBHOOK_PORT`; put it behind nginx / Caddy / Cloudflare to handle the certificate. Telegram requires HTTPS — `setWebhook` will reject anything else.
 - Run as a **non-root** user. The provided Docker image already does this (`USER app`).
 - Mount the `./data` volume from a **dedicated, encrypted** disk or volume.
 - **Restrict `ADMIN_IDS`** to operators you trust. The first entry becomes `super_admin` on first run.
