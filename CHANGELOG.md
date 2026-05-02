@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `pnpm dev`, `pnpm start`, `pnpm db:migrate`, and `pnpm db:reset` now load
+  `.env` via Node 20's built-in `--env-file` flag, matching the contract
+  documented in `src/config/env.ts`. Without the flag the env schema rejected
+  every run with a flood of "Required" issues.
+
 ## [0.1.0] - 2026-05-02
 
 ### Added
