@@ -13,7 +13,7 @@ RUN pnpm install --frozen-lockfile
 
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
-COPY tsconfig.json ./
+COPY package.json tsconfig.json tsconfig.build.json ./
 COPY src ./src
 COPY scripts ./scripts
 RUN pnpm build
