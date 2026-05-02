@@ -18,8 +18,10 @@ import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context.js';
 import { adminOnlyMiddleware } from '../middlewares/adminOnly.middleware.js';
 import { botModeratorMiddleware } from '../middlewares/botModerator.middleware.js';
+import { founderOnlyMiddleware } from '../middlewares/founderOnly.middleware.js';
 import { escapeHtml } from '../../utils/safeText.js';
 import { formatSingleFileShareCode } from '../../utils/shareCodeFormat.js';
+import { AppError } from '../../utils/errors.js';
 import type { FileRow } from '../../types/index.js';
 
 /**
@@ -60,6 +62,7 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
   //   bot owner can never reach across to another bot's content.
   const superAdmin = adminOnlyMiddleware();
   const moderator = botModeratorMiddleware();
+  const founder = founderOnlyMiddleware();
 
   const sa = {
     command: (name: string, handler: Parameters<typeof composer.command>[1]) =>
@@ -68,6 +71,10 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
   const mod = {
     command: (name: string, handler: Parameters<typeof composer.command>[1]) =>
       composer.command(name, moderator, handler),
+  };
+  const founderCmd = {
+    command: (name: string, handler: Parameters<typeof composer.command>[1]) =>
+      composer.command(name, founder, handler),
   };
 
   // /admin — menu (with optional Mini App link). Open to moderators; the
@@ -190,6 +197,106 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
       targetId: String(target.id),
     });
     await ctx.reply(ctx.t('admin.unban.success', { userId: idStr }), { parse_mode: 'HTML' });
+  });
+
+  /* ------------------------------------------------------------------ *
+   * Founder-only: promote / demote super admins, list current ones.
+   *
+   * `/promote` and `/demote` mutate the trust graph and must NEVER be
+   * reachable by a promoted super admin — only env-driven `ADMIN_IDS`
+   * founders. Per-action authz is also re-checked inside
+   * `userService.setRole` so the gate cannot be bypassed by a missing
+   * middleware on a future code path.
+   * ------------------------------------------------------------------ */
+  founderCmd.command('promote', async (ctx) => {
+    const idStr = (ctx.match ?? '').toString().trim();
+    if (!NUMERIC_RE.test(idStr)) {
+      await ctx.reply(ctx.t('admin.promote.usage'), { parse_mode: 'HTML' });
+      return;
+    }
+    const target = ctx.repos.users.findByTelegramId(idStr);
+    if (!target) {
+      await ctx.reply(ctx.t('common.error.user_not_found'));
+      return;
+    }
+    if (target.role === 'super_admin') {
+      await ctx.reply(ctx.t('admin.promote.already', { userId: idStr }), { parse_mode: 'HTML' });
+      return;
+    }
+    try {
+      ctx.services.user.setRole(target, 'super_admin', ctx.user);
+    } catch (err) {
+      if (err instanceof AppError && err.expose) {
+        await ctx.reply(err.message);
+        return;
+      }
+      throw err;
+    }
+    ctx.services.audit.log('user.promoted_to_super_admin', {
+      actorUserId: ctx.user.id,
+      targetType: 'user',
+      targetId: String(target.id),
+      metadata: { telegram_user_id: idStr },
+    });
+    await ctx.reply(ctx.t('admin.promote.success', { userId: idStr }), { parse_mode: 'HTML' });
+  });
+
+  founderCmd.command('demote', async (ctx) => {
+    const idStr = (ctx.match ?? '').toString().trim();
+    if (!NUMERIC_RE.test(idStr)) {
+      await ctx.reply(ctx.t('admin.demote.usage'), { parse_mode: 'HTML' });
+      return;
+    }
+    const target = ctx.repos.users.findByTelegramId(idStr);
+    if (!target) {
+      await ctx.reply(ctx.t('common.error.user_not_found'));
+      return;
+    }
+    if (target.role !== 'super_admin') {
+      await ctx.reply(ctx.t('admin.demote.not_super', { userId: idStr }), { parse_mode: 'HTML' });
+      return;
+    }
+    try {
+      ctx.services.user.setRole(target, 'user', ctx.user);
+    } catch (err) {
+      if (err instanceof AppError && err.expose) {
+        await ctx.reply(err.message);
+        return;
+      }
+      throw err;
+    }
+    ctx.services.audit.log('user.demoted_from_super_admin', {
+      actorUserId: ctx.user.id,
+      targetType: 'user',
+      targetId: String(target.id),
+      metadata: { telegram_user_id: idStr },
+    });
+    await ctx.reply(ctx.t('admin.demote.success', { userId: idStr }), { parse_mode: 'HTML' });
+  });
+
+  founderCmd.command('super_admins', async (ctx) => {
+    const PAGE = 50;
+    const rows = ctx.repos.users.listByRole('super_admin', PAGE, 0);
+    if (rows.length === 0) {
+      await ctx.reply(ctx.t('admin.super_admins.empty'), { parse_mode: 'HTML' });
+      return;
+    }
+    const lines: string[] = [ctx.t('admin.super_admins.header', { count: rows.length })];
+    for (const u of rows) {
+      const isFounderRow = ctx.config.ADMIN_IDS.includes(u.telegram_user_id);
+      const tag = isFounderRow
+        ? ctx.t('admin.super_admins.founder_tag')
+        : ctx.t('admin.super_admins.promoted_tag');
+      const handle = u.username ? `@${u.username}` : u.telegram_user_id;
+      lines.push(
+        ctx.t('admin.super_admins.item', {
+          handle: escapeHtml(handle),
+          userId: escapeHtml(u.telegram_user_id),
+          tag,
+        }),
+      );
+    }
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
   });
 
   /**
@@ -324,6 +431,7 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
  */
 export async function handleAdminCommand(ctx: AppContext): Promise<void> {
   const isSuper = ctx.services.permission.isAdmin(ctx.user);
+  const isFounder = ctx.services.permission.isFounder(ctx.user);
 
   const sections: string[] = [ctx.t('admin.menu')];
   sections.push('');
@@ -331,6 +439,10 @@ export async function handleAdminCommand(ctx: AppContext): Promise<void> {
   if (isSuper) {
     sections.push('');
     sections.push(ctx.t('admin.menu_super'));
+  }
+  if (isFounder) {
+    sections.push('');
+    sections.push(ctx.t('admin.menu_founder'));
   }
 
   const opts: Parameters<typeof ctx.reply>[1] = { parse_mode: 'HTML' };

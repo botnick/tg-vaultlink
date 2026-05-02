@@ -10,6 +10,7 @@
 
 import type { Config } from '../config/env.js';
 import type { UserRow, UserRole } from '../types/index.js';
+import { AppError, ErrorCode } from '../utils/errors.js';
 
 export interface IUserRepository {
   findByTelegramId(telegramUserId: string): UserRow | undefined;
@@ -89,6 +90,55 @@ export class UserService {
   /** Toggle the ban flag and return the refreshed row. */
   setBanned(user: UserRow, banned: boolean): UserRow {
     return this.repo.setBanned(user.id, banned);
+  }
+
+  /**
+   * Mutate `target.role`. ONLY `ADMIN_IDS` founders are allowed to drive
+   * this — promoted super admins (role='super_admin' but NOT in ADMIN_IDS)
+   * cannot grow the trust graph further. Defense-in-depth: even though the
+   * router gates this with `founderOnlyMiddleware`, this method re-checks
+   * `actor.telegram_user_id ∈ ADMIN_IDS` so a forgotten gate never lets a
+   * non-founder reach a privileged code path.
+   *
+   * Refuses to:
+   *   - promote a banned target (no point — banned users can't act anyway)
+   *   - demote a founder (must remove from `.env ADMIN_IDS` instead;
+   *     founders are the trust root and demoting via DB is undefined)
+   *   - mutate the actor's own row (defensive — prevents the actor from
+   *     locking themselves out of further role admin)
+   *
+   * Idempotent: returns the unchanged row when `target.role === role`.
+   */
+  setRole(target: UserRow, role: UserRole, actor: UserRow): UserRow {
+    if (!this.config.ADMIN_IDS.includes(actor.telegram_user_id)) {
+      throw new AppError(
+        ErrorCode.PERMISSION_DENIED,
+        'only founder admins (ADMIN_IDS) may change user roles',
+      );
+    }
+    if (target.id === actor.id) {
+      throw new AppError(ErrorCode.INVALID_INPUT, 'cannot change your own role', {
+        expose: true,
+      });
+    }
+    if (role === 'super_admin' && target.is_banned === 1) {
+      throw new AppError(ErrorCode.INVALID_INPUT, 'cannot promote a banned user', {
+        expose: true,
+      });
+    }
+    if (
+      target.role === 'super_admin' &&
+      role !== 'super_admin' &&
+      this.config.ADMIN_IDS.includes(target.telegram_user_id)
+    ) {
+      throw new AppError(
+        ErrorCode.INVALID_INPUT,
+        'cannot demote a founder admin — remove them from ADMIN_IDS in .env first',
+        { expose: true },
+      );
+    }
+    if (target.role === role) return target;
+    return this.repo.update(target.id, { role });
   }
 
   private resolveLocale(languageCode: string | null): string {

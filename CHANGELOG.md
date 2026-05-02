@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-02
+
+### Added (founder-tier admin)
+
+- **Two-tier admin model**: anyone listed in `.env ADMIN_IDS` is a
+  **founder** — the only role that can promote / demote other users to /
+  from `role='super_admin'`. Promoted super admins inherit every
+  super-admin power EXCEPT this one — they cannot grow the trust graph
+  further. The env file stays the single root of authority and a
+  compromised promoted account cannot escalate.
+- **New commands** (founder-only, hidden from non-founders):
+  `/promote [user_id]` — promote a regular user to super admin.
+  `/demote [user_id]` — remove super admin from a previously-promoted user.
+  `/super_admins` — list every super admin with a 🔑 founder / promoted tag.
+- **`permission.isFounder(user)`** — strict check for `ADMIN_IDS`
+  membership. Banned users are never founders.
+- **`user.service.setRole()`** with defense-in-depth: re-checks
+  founder status server-side, refuses self-mutation, refuses to
+  promote a banned user, and refuses to demote a founder via DB
+  (must remove from `.env` first). Idempotent on no-op.
+- **`founderOnlyMiddleware`** — coarse first-pass gate, attached
+  per-command (no global `composer.use`) so non-founder traffic
+  doesn't reach handlers that would just throw.
+- **Boot-time founder sync**: every `ADMIN_IDS` member is now seeded
+  as `role='super_admin'` on every boot — previously only the first
+  admin id got the role column set, the others were admins only via
+  the runtime ADMIN_IDS check. Now `/super_admins` shows everyone
+  consistently.
+- **`/admin` menu adapts to founder role**: when the caller is a
+  founder, an extra "🔑 Founder only" section lists `/promote`,
+  `/demote`, and `/super_admins`. Non-founders never see those
+  commands surfaced.
+- **Audit log entries** `user.promoted_to_super_admin` and
+  `user.demoted_from_super_admin` for every successful role change.
+
 ## [0.2.0] - 2026-05-02
 
 ### Changed (UX simplification — Tier A)
@@ -298,6 +333,7 @@ timeout=0)` so Telegram releases the long-poll session immediately
 - Standalone and Docker runtimes.
 - Auto build & release workflow on `v*` tags.
 
-[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.1
 [0.2.0]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.0
 [0.1.0]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.1.0

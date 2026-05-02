@@ -78,6 +78,30 @@ export async function bootstrapMainBot(
     ownerRow = repos.users.update(ownerRow.id, { role: 'super_admin' });
   }
 
+  // Sync EVERY founder (everyone listed in ADMIN_IDS, not just the first
+  // one used as the main bot owner) to `role='super_admin'` so they show
+  // up in `/super_admins`, can run super-admin commands, and look right
+  // in the Mini App. Founders without a row yet get one — they'll have
+  // empty profile fields until their first interaction with the bot
+  // (which fills `username` / `first_name` via `attachUser` middleware).
+  for (const adminId of config.ADMIN_IDS) {
+    const existing = repos.users.findByTelegramId(adminId);
+    if (!existing) {
+      repos.users.insert({
+        telegram_user_id: adminId,
+        username: null,
+        first_name: null,
+        last_name: null,
+        locale: config.DEFAULT_LOCALE,
+        role: 'super_admin',
+      });
+      log.info({ telegram_user_id: adminId }, 'founder seeded as super_admin');
+    } else if (existing.role !== 'super_admin') {
+      repos.users.update(existing.id, { role: 'super_admin' });
+      log.info({ telegram_user_id: adminId }, 'founder promoted to super_admin');
+    }
+  }
+
   // Locate or insert the managed_bots row.
   let record = repos.bots.findByTelegramBotId(telegramBotId);
   const enc = encryptToken(token, config.TOKEN_ENCRYPTION_KEY);

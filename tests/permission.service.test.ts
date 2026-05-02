@@ -409,6 +409,31 @@ describe('permission.service — canModerateFile (cross-bot isolation)', () => {
   });
 });
 
+describe('permission.service — isFounder', () => {
+  // The default `buildTestEnv` config has `ADMIN_IDS=['9999999']`. Tests
+  // that need a different list should construct their own env locally
+  // (see user.service.setRole.test.ts for the pattern).
+  it('returns true when the user is in env ADMIN_IDS', () => {
+    const founder = seedUser(env.repos, '9999999');
+    expect(perms.isFounder(founder)).toBe(true);
+  });
+
+  it('returns false when the user is super_admin BUT not in ADMIN_IDS', () => {
+    const promoted = seedUser(env.repos, '999001', 'super_admin');
+    expect(perms.isFounder(promoted)).toBe(false);
+  });
+
+  it('returns false for plain users', () => {
+    const plain = seedUser(env.repos, '999002');
+    expect(perms.isFounder(plain)).toBe(false);
+  });
+
+  it('returns false for banned users even if their id is in ADMIN_IDS', () => {
+    const banned = seedUser(env.repos, '9999999', 'super_admin', true);
+    expect(perms.isFounder(banned)).toBe(false);
+  });
+});
+
 describe('permission.service — isModerator', () => {
   it('returns true for super_admin', () => {
     const sysAdmin = seedUser(env.repos, '940', 'super_admin');

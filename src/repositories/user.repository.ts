@@ -24,6 +24,7 @@ export class UserRepository {
   private readonly setBannedStmt;
   private readonly countAllStmt;
   private readonly listStmt;
+  private readonly listByRoleStmt;
 
   constructor(private readonly db: Db) {
     this.findByTelegramIdStmt = db.prepare('SELECT * FROM users WHERE telegram_user_id = ?');
@@ -44,6 +45,14 @@ export class UserRepository {
 
     this.countAllStmt = db.prepare('SELECT COUNT(*) AS n FROM users');
     this.listStmt = db.prepare('SELECT * FROM users ORDER BY id ASC LIMIT ? OFFSET ?');
+    this.listByRoleStmt = db.prepare(
+      'SELECT * FROM users WHERE role = ? ORDER BY id ASC LIMIT ? OFFSET ?',
+    );
+  }
+
+  /** All users with the given role (e.g. `super_admin`). Stable order by id. */
+  listByRole(role: UserRole, limit: number, offset: number): UserRow[] {
+    return this.listByRoleStmt.all(role, limit, offset) as unknown as UserRow[];
   }
 
   findByTelegramId(telegramUserId: string): UserRow | undefined {

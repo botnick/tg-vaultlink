@@ -59,6 +59,25 @@ export class PermissionService {
     return this.userService.isAdmin(user);
   }
 
+  /**
+   * Is the user a "founder" — i.e. a member of the env-driven `ADMIN_IDS`
+   * bootstrap list?
+   *
+   * Founders are the ROOT of the trust graph. They can promote / demote
+   * other users to / from super_admin role. A user with `role='super_admin'`
+   * who is NOT in `ADMIN_IDS` (i.e. someone a founder promoted) has every
+   * super-admin power EXCEPT this one — they cannot grow the trust graph,
+   * which makes the env file the single point of authority and prevents
+   * privilege-escalation attacks via a compromised promoted account.
+   *
+   * Banned users are never founders, even if their id is in `ADMIN_IDS` —
+   * they're locked out before any check runs.
+   */
+  isFounder(user: UserRow): boolean {
+    if (this.isBanned(user)) return false;
+    return this.config.ADMIN_IDS.includes(user.telegram_user_id);
+  }
+
   /** Can the user upload a file via this bot? */
   canUpload(user: UserRow, bot: ManagedBotRow): PermissionDecision {
     if (this.isBanned(user)) return deny('banned');
