@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed (UX)
 
+- **Share-code separator switched from `:` to `_`.** A share code is now
+  rendered and parsed as `botname_CODE` (e.g. `qqpptbot_RP2VHVE6AGRV`)
+  instead of `botname:CODE`. Telegram's auto-linker tends to mangle the
+  colon form into a (broken) deep link, so `_` round-trips cleanly through
+  copy-paste. Legacy `botname:CODE` strings are still accepted by the
+  parser, so previously-shared codes continue to resolve. Code allocation,
+  bot routing, audit, and Mini App displays all use the new form.
 - **Less chatter, same gates.** The bot now stays quiet when nothing needs
   saying. Specifically:
   - Batch decode no longer posts a "Found N codes" banner or per-item

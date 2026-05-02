@@ -105,7 +105,7 @@ describe('share.service — draft lifecycle', () => {
 
     const result = await share.finishCollection(draft, owner);
     expect(result.collection.total_items).toBe(3);
-    expect(result.shareCode).toBe(`${bot.username}:${result.collection.code}`);
+    expect(result.shareCode).toBe(`${bot.username}_${result.collection.code}`);
     expect(result.deepLink).toContain(bot.username);
 
     const items = env.repos.collections.listItems(result.collection.id);
@@ -170,14 +170,14 @@ describe('share.service — resolveShareCode', () => {
     const fin = await share.finishCollection(draft, owner);
 
     const r1 = await share.resolveShareCode({
-      rawCode: `${bot.username}:${up.file.code}`,
+      rawCode: `${bot.username}_${up.file.code}`,
       contextBot: bot,
     });
     expect(r1).not.toBeNull();
     expect(r1!.type).toBe('single_file');
 
     const r2 = await share.resolveShareCode({
-      rawCode: `${bot.username}:${fin.collection.code}`,
+      rawCode: `${bot.username}_${fin.collection.code}`,
       contextBot: bot,
     });
     expect(r2).not.toBeNull();

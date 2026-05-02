@@ -360,7 +360,7 @@ export class ShareService {
       },
     });
 
-    const shareCode = `${bot.username}:${finalRow.code}`;
+    const shareCode = `${bot.username}_${finalRow.code}`;
     const deepLink = `${this.config.TELEGRAM_DEEP_LINK_BASE}/${bot.username}?start=${finalRow.code}`;
     return { collection: finalRow, shareCode, deepLink };
   }

@@ -32,7 +32,7 @@ function renderPage(
 
   const lines: string[] = [ctx.t('files.list_header', { count: total })];
   for (const row of rows) {
-    const shareCode = `${ctx.bot.username}:${row.code}`;
+    const shareCode = `${ctx.bot.username}_${row.code}`;
     lines.push(
       ctx.t('files.list_item', {
         code: escapeHtml(shareCode),
@@ -293,7 +293,7 @@ export async function handleFilesCommand(ctx: AppContext): Promise<void> {
   const rows = buildOwnerListing(ctx);
   const lines: string[] = [ctx.t('files.list_header', { count: total })];
   for (const r of rows) {
-    const shareCode = `${ctx.bot.username}:${r.code}`;
+    const shareCode = `${ctx.bot.username}_${r.code}`;
     const lockTag = r.is_locked === 1 ? ' 🔒' : '';
     const pwTag = r.hasPassword ? ' 🔑' : '';
     lines.push(
@@ -322,7 +322,7 @@ export async function handleFilesCommand(ctx: AppContext): Promise<void> {
           : ctx.t('collection.preview.button.visibility_public'),
         `files:visibility:${r.type}:${r.id}`,
       );
-    await ctx.reply(`<code>${escapeHtml(`${ctx.bot.username}:${r.code}`)}</code>`, {
+    await ctx.reply(`<code>${escapeHtml(`${ctx.bot.username}_${r.code}`)}</code>`, {
       parse_mode: 'HTML',
       reply_markup: kb,
     });
@@ -349,7 +349,7 @@ async function handleFilesItemAction(
     switch (action) {
       case 'copy_code':
       case 'copy_link': {
-        const shareCode = `${ctx.bot.username}:${file.code}`;
+        const shareCode = `${ctx.bot.username}_${file.code}`;
         const deepLink = `${ctx.config.TELEGRAM_DEEP_LINK_BASE}/${ctx.bot.username}?start=${file.code}`;
         await ctx.answerCallbackQuery();
         await ctx.reply(
@@ -360,7 +360,7 @@ async function handleFilesItemAction(
       }
       case 'open': {
         await ctx.answerCallbackQuery();
-        const shareCode = `${ctx.bot.username}:${file.code}`;
+        const shareCode = `${ctx.bot.username}_${file.code}`;
         await ctx.reply(`<code>${escapeHtml(shareCode)}</code>`, { parse_mode: 'HTML' });
         return;
       }
@@ -402,7 +402,7 @@ async function handleFilesItemAction(
   switch (action) {
     case 'copy_code':
     case 'copy_link': {
-      const shareCode = `${ctx.bot.username}:${coll.code}`;
+      const shareCode = `${ctx.bot.username}_${coll.code}`;
       const deepLink = `${ctx.config.TELEGRAM_DEEP_LINK_BASE}/${ctx.bot.username}?start=${coll.code}`;
       await ctx.answerCallbackQuery();
       await ctx.reply(

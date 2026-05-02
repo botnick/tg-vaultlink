@@ -10,8 +10,8 @@
  *      file inline; collection shares render page 1 of the preview.
  *
  * Password-protected shares deflect with a localized prompt that tells the
- * user to resend in the `<code>:<password>` form supported by the decode
- * router.
+ * user to resend in the `<botname>_<code>:<password>` form supported by the
+ * decode router.
  */
 
 import { Composer } from 'grammy';
@@ -36,9 +36,9 @@ export function registerStartRouter(composer: Composer<AppContext>): void {
       return;
     }
 
-    // Deep-link argument: treat a bare code as `<thisBotUsername>:<code>` so
+    // Deep-link argument: treat a bare code as `<thisBotUsername>_<code>` so
     // the resolver knows which bot to consult.
-    const rawCode = isValidCode(arg) ? `${ctx.bot.username}:${arg}` : arg;
+    const rawCode = isValidCode(arg) ? `${ctx.bot.username}_${arg}` : arg;
 
     let resolved;
     try {
@@ -61,7 +61,7 @@ export function registerStartRouter(composer: Composer<AppContext>): void {
       } catch (err) {
         if (err instanceof AppError) {
           if (err.code === ErrorCode.PASSWORD_REQUIRED) {
-            const shareCode = `${ctx.bot.username}:${resolved.collection.code}`;
+            const shareCode = `${ctx.bot.username}_${resolved.collection.code}`;
             await ctx.reply(
               ctx.t('decode.password_required', { shareCode: escapeHtml(shareCode) }),
               { parse_mode: 'HTML' },
@@ -94,7 +94,7 @@ export function registerStartRouter(composer: Composer<AppContext>): void {
       await deliverFile(ctx, result.file);
     } catch (err) {
       if (err instanceof AppError && err.code === ErrorCode.PASSWORD_REQUIRED) {
-        const shareCode = `${ctx.bot.username}:${isValidCode(arg) ? arg : arg}`;
+        const shareCode = `${ctx.bot.username}_${isValidCode(arg) ? arg : arg}`;
         await ctx.reply(ctx.t('decode.password_required', { shareCode: escapeHtml(shareCode) }), {
           parse_mode: 'HTML',
         });

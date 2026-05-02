@@ -19,7 +19,7 @@
   "start.open_mini_app": "🚀 Open Mini App",
   "start.dashboard_button": "🛠️ Dashboard",
 
-  "help.intro": "📚 <b>How to use</b>\n• Send a file → instant share code (multiple files / album → auto Collection)\n• Paste <code>botname:CODE</code> to retrieve (multiple codes at once OK)",
+  "help.intro": "📚 <b>How to use</b>\n• Send a file → instant share code (multiple files / album → auto Collection)\n• Paste <code>botname_CODE</code> to retrieve (multiple codes at once OK)",
   "help.commands_list": "<b>Main commands:</b>\n/start /help /files /bots /settings /cancel",
   "help.commands": "<b>General commands</b>\n/start — get started\n/help — show this help\n/my_files — list your files\n/del &lt;code&gt; — delete one of your files\n/set_password &lt;code&gt; &lt;password&gt; — protect a file\n/remove_password &lt;code&gt; — remove a file password\n/report &lt;code&gt; — report a file\n/lang — change language",
   "help.bot_management": "<b>Personal bot management</b>\n/add_bot &lt;BOT_TOKEN&gt; — add a private bot (only you can use it)\n/add_bot_open &lt;BOT_TOKEN&gt; — add a public bot (anyone can use it)\n/my_bots — list your bots\n/remove_bot &lt;@username&gt; — remove one of your bots\n/allow &lt;user_id&gt; — allow a user (private mode)\n/deny &lt;user_id&gt; — revoke a user\n/allow_upload &lt;user_id&gt; — let a user upload through your bot\n/deny_upload &lt;user_id&gt; — block a user from uploading",
@@ -37,8 +37,8 @@
   "upload.unsupported": "Unsupported attachment. Please send a document, photo, video, or audio file.",
   "upload.permission_denied": "❌ You do not have permission to upload through this bot.",
 
-  "decode.prompt": "🔎 Send a share code as <code>botname:CODE</code>. You can paste several at once.",
-  "decode.prefix_required": "Use the <code>botname:CODE</code> form.",
+  "decode.prompt": "🔎 Send a share code as <code>botname_CODE</code>. You can paste several at once.",
+  "decode.prefix_required": "Use the <code>botname_CODE</code> form.",
   "decode.batch_failures": "⚠️ {{failed}} failed: {{codes}}",
   "decode.not_found": "❌ No file matches that code. It may have been deleted, or the code is incorrect.",
   "decode.locked": "🔒 This file has been locked by an administrator and cannot be retrieved.",

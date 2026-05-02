@@ -44,7 +44,7 @@ export interface UploadInput {
 
 export interface UploadResult {
   file: FileRow;
-  /** Bot-namespaced share code: `<bot.username>:<code>`. */
+  /** Bot-namespaced share code: `<bot.username>_<code>`. */
   shareCode: string;
   /** Telegram deep link: `<TELEGRAM_DEEP_LINK_BASE>/<bot.username>?start=<code>`. */
   deepLink: string;
@@ -161,7 +161,7 @@ export class FileService {
     });
 
     // 9) User-facing artifacts.
-    const shareCode = `${bot.username}:${code}`;
+    const shareCode = `${bot.username}_${code}`;
     const deepLink = `${this.config.TELEGRAM_DEEP_LINK_BASE}/${bot.username}?start=${code}`;
 
     return { file, shareCode, deepLink };
