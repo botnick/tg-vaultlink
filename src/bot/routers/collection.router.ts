@@ -1,14 +1,17 @@
 /**
- * Collection router (Wave 7).
+ * Collection router.
  *
- * Owns every `coll:*` callback emitted by the share-creation wizard and the
- * collection-preview UI:
+ * Owns every `coll:*` callback emitted by the collection-preview UI:
  *
- *   - draft lifecycle: `coll:finish`, `coll:summary`, `coll:cancel`
  *   - preview navigation: `coll:page:<id>:<page>`, `coll:close:<id>`
  *   - bulk delivery: `coll:send_all:<id>`
  *   - moderation hand-off: `coll:report:<id>`
  *   - owner/admin actions: `coll:lock:*`, `coll:delete:*`, etc.
+ *
+ * Draft lifecycle (open → append → finalize) is fully automatic: it lives in
+ * `upload.router.ts` and triggers off Telegram's `media_group_id`. There are
+ * no `/new`-style commands or "finish/summary/cancel" buttons — uploading
+ * multiple files at once IS the way to create a Collection.
  *
  * Bulk send is orchestrated here (NOT in the service) so the rate-limit and
  * delivery semantics stay close to the Telegram API surface; the service
@@ -18,7 +21,6 @@
 import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context.js';
 import { AppError, ErrorCode } from '../../utils/errors.js';
-import { escapeHtml } from '../../utils/safeText.js';
 import { deliverItem } from './_delivery.js';
 import type { CollectionItemRow, CollectionRow } from '../../types/index.js';
 
@@ -79,82 +81,6 @@ async function deliverItemsBatch(ctx: AppContext, items: CollectionItemRow[]): P
 }
 
 export function registerCollectionRouter(composer: Composer<AppContext>): void {
-  /* ------------------------------------------------------------------ *
-   * Draft lifecycle
-   * ------------------------------------------------------------------ */
-  composer.callbackQuery('coll:finish', async (ctx) => {
-    if (!ctx.config.ENABLE_COLLECTIONS) {
-      await ctx.answerCallbackQuery({ text: ctx.t('new.feature_disabled') });
-      return;
-    }
-    const draft = ctx.services.share.getOpenDraft(ctx.user, ctx.bot);
-    if (!draft) {
-      await ctx.answerCallbackQuery({ text: ctx.t('common.nothing_to_cancel') });
-      return;
-    }
-    try {
-      const result = await ctx.services.share.finishCollection(draft, ctx.user);
-      await ctx.answerCallbackQuery();
-      await ctx.reply(
-        ctx.t('collection.finished', {
-          shareCode: escapeHtml(result.shareCode),
-          deepLink: escapeHtml(result.deepLink),
-          total: result.collection.total_items,
-        }),
-        { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
-      );
-    } catch (err) {
-      if (err instanceof AppError && err.expose) {
-        await ctx.answerCallbackQuery({ text: err.message });
-        return;
-      }
-      throw err;
-    }
-  });
-
-  composer.callbackQuery('coll:summary', async (ctx) => {
-    if (!ctx.config.ENABLE_COLLECTIONS) {
-      await ctx.answerCallbackQuery({ text: ctx.t('new.feature_disabled') });
-      return;
-    }
-    const draft = ctx.services.share.getOpenDraft(ctx.user, ctx.bot);
-    if (!draft) {
-      await ctx.answerCallbackQuery({ text: ctx.t('common.nothing_to_cancel') });
-      return;
-    }
-    const counts = ctx.repos.collectionDrafts.countItemsByType(draft.id);
-    const total = ctx.repos.collectionDrafts.countItems(draft.id);
-    await ctx.answerCallbackQuery();
-    await ctx.reply(
-      ctx.t('collection.draft.summary', {
-        total,
-        photo: counts.photo,
-        video: counts.video,
-        doc: counts.document,
-        audio: counts.audio,
-        voice: counts.voice,
-        animation: counts.animation,
-        sticker: counts.sticker,
-      }),
-      { parse_mode: 'HTML' },
-    );
-  });
-
-  composer.callbackQuery('coll:cancel', async (ctx) => {
-    if (!ctx.config.ENABLE_COLLECTIONS) {
-      await ctx.answerCallbackQuery({ text: ctx.t('new.feature_disabled') });
-      return;
-    }
-    const draft = ctx.services.share.getOpenDraft(ctx.user, ctx.bot);
-    if (!draft) {
-      await ctx.answerCallbackQuery({ text: ctx.t('common.nothing_to_cancel') });
-      return;
-    }
-    ctx.services.share.cancelDraft(draft, ctx.user);
-    await ctx.answerCallbackQuery();
-    await ctx.reply(ctx.t('collection.draft.cancelled'));
-  });
-
   /* ------------------------------------------------------------------ *
    * Preview navigation
    * ------------------------------------------------------------------ */

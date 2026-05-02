@@ -27,7 +27,6 @@ import { registerPermissionsRouter } from './routers/permissions.router.js';
 import { registerReportsRouter } from './routers/reports.router.js';
 import { registerAdminRouter } from './routers/admin.router.js';
 import { registerSettingsRouter } from './routers/settings.router.js';
-import { registerNewRouter } from './routers/new.router.js';
 import { registerCancelRouter } from './routers/cancel.router.js';
 import { registerCollectionRouter } from './routers/collection.router.js';
 import { registerMainMenuRouter } from './routers/main_menu.router.js';
@@ -110,10 +109,6 @@ export function createBot(opts: CreateBotOptions): Bot<AppContext> {
   // not interpreted as text, settings runs before permissions (so /lang
   // wins over the permissions /lang fall-through), admin runs last so its
   // adminOnly guard doesn't block earlier non-admin commands.
-  //
-  // Wave 7: the new routers (main_menu, new, collection, cancel) are
-  // registered AFTER the existing ones so the legacy commands still
-  // function as hidden aliases.
   const composer = new Composer<AppContext>();
   registerStartRouter(composer);
   registerHelpRouter(composer);
@@ -127,8 +122,6 @@ export function createBot(opts: CreateBotOptions): Bot<AppContext> {
   registerPermissionsRouter(composer);
   registerReportsRouter(composer);
   registerAdminRouter(composer);
-  // Wave 7 routers — minimal command UX + collection callbacks.
-  registerNewRouter(composer);
   registerCancelRouter(composer);
   registerCollectionRouter(composer);
   registerMainMenuRouter(composer);

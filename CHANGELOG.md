@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (UX)
+
+- **Albums become Collections automatically.** When the user uploads multiple
+  media as one Telegram album, the upload router now detects the shared
+  `media_group_id`, opens a draft, appends each item, and debounce-finalises
+  ~1.5 s after the last arrival into a single Collection — replying ONCE with
+  one share code instead of N "Upload successful" messages. No `/new`, no
+  buttons; sending several files at once IS the way to bundle them.
+- **Removed the `/new` picker.** The "single file vs Collection" choice was
+  redundant — single uploads stay single, multi-uploads auto-bundle. The
+  `/new` command, the `coll:finish` / `coll:summary` / `coll:cancel`
+  callbacks, and the "📤 สร้างรหัสแชร์" main-menu button are all gone.
+  `PUBLIC_BOT_COMMANDS` is one shorter; `setMyCommands` reflects the
+  cleaner surface on next boot.
+- **Strict share-code prefix in chat.** The decode router now requires the
+  full `botname:CODE` form (or a `https://t.me/<bot>?start=<CODE>` deep link).
+  Bare codes typed alone are rejected with a clear hint. This removes a class
+  of cross-bot misroutes when users paste a code to the wrong instance.
+  Admin commands (`/del`, `/lock_file`, etc.) still accept bare codes —
+  the strict gate only applies to plain-text decode messages.
+- **Batch decode.** A single message can now carry many `botname:CODE`
+  lines (one per line); the bot delivers each in order with a small spacing
+  delay, capped at `MAX_BULK_SEND_ITEMS`, and posts a single summary at the
+  end. Single-line messages keep the existing single-delivery UX.
+
 ### Added (transport)
 
 - `TELEGRAM_UPDATE_MODE` env switch — pick `long_poll` (default, current

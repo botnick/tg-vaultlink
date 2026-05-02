@@ -1,16 +1,15 @@
 /**
- * Main menu router (Wave 7).
+ * Main menu router.
  *
  * Owns the `menu:*` callback queries fired from the inline keyboard surfaced
- * by `/start`. Each callback simply re-dispatches the corresponding command
- * handler — `/new`, `/files`, etc. — so a button press behaves identically
- * to typing the command. Handlers live in their own router files and are
- * imported here as plain functions to avoid duplicate logic.
+ * by `/start`. Each callback re-dispatches the corresponding command handler
+ * — `/files`, `/bots`, etc. — so a button press behaves identically to typing
+ * the command. There is no "create share" entry: uploading a file (or an
+ * album) IS the create flow, surfaced via the upload router.
  */
 
 import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context.js';
-import { handleNewCommand } from './new.router.js';
 import { handleFilesCommand } from './files.router.js';
 import { handleBotsCommand } from './botManagement.router.js';
 import { handleSettingsCommand } from './settings.router.js';
@@ -20,8 +19,6 @@ import { handleAdminCommand } from './admin.router.js';
 /** Build the main-menu inline keyboard shown after `/start` (no deep link). */
 export function buildMainMenuKeyboard(ctx: AppContext): InlineKeyboard {
   const kb = new InlineKeyboard()
-    .text(ctx.t('menu.create_share'), 'menu:new')
-    .row()
     .text(ctx.t('menu.my_files'), 'menu:files')
     .text(ctx.t('menu.my_bots'), 'menu:bots')
     .row()
@@ -40,11 +37,6 @@ export function buildMainMenuKeyboard(ctx: AppContext): InlineKeyboard {
 }
 
 export function registerMainMenuRouter(composer: Composer<AppContext>): void {
-  composer.callbackQuery('menu:new', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await handleNewCommand(ctx);
-  });
-
   composer.callbackQuery('menu:files', async (ctx) => {
     await ctx.answerCallbackQuery();
     await handleFilesCommand(ctx);

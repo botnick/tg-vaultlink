@@ -16,7 +16,6 @@ import type { BotCommand } from 'grammy/types';
 export const PUBLIC_BOT_COMMANDS: readonly BotCommand[] = [
   { command: 'start', description: 'เปิดเมนูหลัก / Open main menu' },
   { command: 'help', description: 'วิธีใช้งาน / How to use' },
-  { command: 'new', description: 'สร้างรหัสแชร์ / Create a share' },
   { command: 'files', description: 'ไฟล์ของฉัน / My files' },
   { command: 'bots', description: 'บอทส่วนตัว / My bots' },
   { command: 'settings', description: 'ตั้งค่า / Settings' },

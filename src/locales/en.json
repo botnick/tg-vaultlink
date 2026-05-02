@@ -19,8 +19,8 @@
   "start.open_mini_app": "🚀 Open Mini App",
   "start.dashboard_button": "🛠️ Dashboard",
 
-  "help.intro": "📚 <b>How to use VaultLink Bot</b>\n\n1. Tap /new or \"📤 Create share\"\n2. Send a single file, or a Collection of multiple files\n3. For a Collection, tap \"✅ Finish\" when done\n4. Send the code or tap the link to retrieve files",
-  "help.commands_list": "<b>Main commands:</b>\n/start /help /new /files /bots /settings /cancel",
+  "help.intro": "📚 <b>How to use VaultLink Bot</b>\n\n1. Send a file in chat — you'll get a share code instantly\n2. Send multiple files at once (an album) — they're auto-bundled into a Collection\n3. Paste <code>botname:CODE</code> to retrieve a file. Paste several codes at once to retrieve them in order\n4. Or tap a link of the form <code>https://t.me/&lt;bot&gt;?start=&lt;CODE&gt;</code>",
+  "help.commands_list": "<b>Main commands:</b>\n/start /help /files /bots /settings /cancel",
   "help.commands": "<b>General commands</b>\n/start — get started\n/help — show this help\n/my_files — list your files\n/del &lt;code&gt; — delete one of your files\n/set_password &lt;code&gt; &lt;password&gt; — protect a file\n/remove_password &lt;code&gt; — remove a file password\n/report &lt;code&gt; — report a file\n/lang — change language",
   "help.bot_management": "<b>Personal bot management</b>\n/add_bot &lt;BOT_TOKEN&gt; — add a private bot (only you can use it)\n/add_bot_open &lt;BOT_TOKEN&gt; — add a public bot (anyone can use it)\n/my_bots — list your bots\n/remove_bot &lt;@username&gt; — remove one of your bots\n/allow &lt;user_id&gt; — allow a user (private mode)\n/deny &lt;user_id&gt; — revoke a user\n/allow_upload &lt;user_id&gt; — let a user upload through your bot\n/deny_upload &lt;user_id&gt; — block a user from uploading",
   "help.privacy_terms": "📄 /terms — Terms of Service\n🔐 /privacy — Privacy Policy",
@@ -37,7 +37,12 @@
   "upload.unsupported": "Unsupported attachment. Please send a document, photo, video, or audio file.",
   "upload.permission_denied": "❌ You do not have permission to upload through this bot.",
 
-  "decode.prompt": "🔎 Send a share code to retrieve a file, or use the start link you were given.",
+  "decode.prompt": "🔎 Send a share code in the full <code>botname:CODE</code> form, e.g. <code>qqpptbot:ABCDE23456</code>\nYou can paste several codes at once (one per line); they'll be delivered in order.",
+  "decode.prefix_required": "❌ The full <code>botname:CODE</code> form is required (e.g. <code>qqpptbot:ABCDE23456</code>). Bare codes are not accepted.",
+  "decode.batch_starting": "📦 Found {{count}} share codes — delivering in order...",
+  "decode.batch_summary": "✅ Delivered {{ok}} / {{total}}{{failedSuffix}}",
+  "decode.batch_failed_suffix": " (failed: {{failed}})",
+  "decode.batch_item_error": "⚠️ <code>{{shareCode}}</code> — {{reason}}",
   "decode.not_found": "❌ No file matches that code. It may have been deleted, or the code is incorrect.",
   "decode.locked": "🔒 This file has been locked by an administrator and cannot be retrieved.",
   "decode.expired": "⌛ This file has expired.",
@@ -151,6 +156,7 @@
   "collection.draft.button.cancel": "❌ Cancel",
 
   "collection.finished": "✅ Collection created ({{total}} items)\nShare code: <code>{{shareCode}}</code>\nLink: {{deepLink}}",
+  "collection.auto.finished": "📦 Auto-bundled into a Collection ({{total}} items)\nShare code: <code>{{shareCode}}</code>\nLink: {{deepLink}}",
 
   "collection.preview.caption": "Page {{page}}/{{totalPages}} · {{total}} items\nPhotos: {{photo}} · Videos: {{video}} · Documents: {{doc}}",
   "collection.preview.no_items": "This collection has no items.",
