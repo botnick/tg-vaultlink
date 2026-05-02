@@ -80,8 +80,8 @@ export async function bootstrapMainBot(
 
   // Locate or insert the managed_bots row.
   let record = repos.bots.findByTelegramBotId(telegramBotId);
+  const enc = encryptToken(token, config.TOKEN_ENCRYPTION_KEY);
   if (!record) {
-    const enc = encryptToken(token, config.TOKEN_ENCRYPTION_KEY);
     record = repos.bots.insert({
       owner_user_id: ownerRow.id,
       telegram_bot_id: telegramBotId,
@@ -99,10 +99,22 @@ export async function bootstrapMainBot(
       metadata: { telegram_bot_id: telegramBotId, username },
     });
     log.info({ username, telegram_bot_id: telegramBotId }, 'main bot registered');
-  } else if (record.mode !== 'main_public') {
-    // Defensive: if the same token was previously registered as a personal
-    // bot (e.g. ops migrated tokens), force the mode back.
-    record = repos.bots.setMode(record.id, 'main_public') ?? record;
+  } else {
+    if (record.mode !== 'main_public') {
+      // Defensive: if the same token was previously registered as a personal
+      // bot (e.g. ops migrated tokens), force the mode back.
+      record = repos.bots.setMode(record.id, 'main_public') ?? record;
+    }
+    // Self-heal on every successful boot: re-encrypt the .env token, refresh
+    // display_name, force status=active, clear last_error. Means a token
+    // regen + restart "just works" — no db:reset / manual cleanup.
+    record =
+      repos.bots.refreshSelf(record.id, {
+        encrypted_token: enc.encrypted,
+        token_nonce: enc.nonce,
+        token_auth_tag: enc.authTag,
+        display_name: displayName,
+      }) ?? record;
   }
 
   const grammyBot = createBot({

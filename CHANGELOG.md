@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (operational reliability)
+
+- Main bot now self-heals its `managed_bots` row on every successful boot:
+  the encrypted token is refreshed from `.env`, `display_name` is re-synced,
+  `status` is forced back to `active`, and any stale `last_error` is cleared.
+  Operators can now recover from Telegram token regen, transient 401s, or any
+  past `status='error'` state by simply restarting the process — no
+  `db:reset`, no manual SQL. **Files, collections, users, reports,
+  permissions, and audit logs are not touched.**
+
 ### Added
 
 - `docs/SETUP.md` — Thai walkthrough that covers BotFather setup, encryption

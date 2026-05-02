@@ -24,6 +24,7 @@ export class BotRepository {
   private readonly listAllStmt;
   private readonly setStatusStmt;
   private readonly setModeStmt;
+  private readonly refreshSelfStmt;
   private readonly countAllStmt;
   private readonly countByStatusStmt;
   private readonly countByOwnerStmt;
@@ -65,6 +66,18 @@ export class BotRepository {
     this.setModeStmt = db.prepare(
       `UPDATE managed_bots
          SET mode = @mode, updated_at = @now
+       WHERE id = @id
+       RETURNING *`,
+    );
+    this.refreshSelfStmt = db.prepare(
+      `UPDATE managed_bots
+         SET encrypted_token = @encrypted_token,
+             token_nonce     = @token_nonce,
+             token_auth_tag  = @token_auth_tag,
+             display_name    = @display_name,
+             status          = 'active',
+             last_error      = NULL,
+             updated_at      = @now
        WHERE id = @id
        RETURNING *`,
     );
@@ -132,6 +145,31 @@ export class BotRepository {
     return this.setModeStmt.get({
       id,
       mode,
+      now: nowIso(),
+    }) as unknown as ManagedBotRow | undefined;
+  }
+
+  /**
+   * Re-sync the main bot row at boot: refresh the encrypted token from .env,
+   * update the cached display_name, force `status='active'`, and clear any
+   * stale `last_error`. Lets operators recover from token regen / past 401s
+   * by simply restarting the process — no `db:reset` required.
+   */
+  refreshSelf(
+    id: number,
+    params: {
+      encrypted_token: string;
+      token_nonce: string;
+      token_auth_tag: string;
+      display_name: string | null;
+    },
+  ): ManagedBotRow | undefined {
+    return this.refreshSelfStmt.get({
+      id,
+      encrypted_token: params.encrypted_token,
+      token_nonce: params.token_nonce,
+      token_auth_tag: params.token_auth_tag,
+      display_name: params.display_name,
       now: nowIso(),
     }) as unknown as ManagedBotRow | undefined;
   }
