@@ -212,7 +212,7 @@ export async function startApp(): Promise<AppHandle> {
         if (code === 409) {
           log.error(
             { attempts, waitedMs: Date.now() - start },
-            'poll lock still held after full timeout window — another deployment of this bot token is polling Telegram. Either kill it or switch to TELEGRAM_UPDATE_MODE=webhook.',
+            'poll lock still held after full timeout window - another deployment of this bot token is polling Telegram. Either kill it or switch to TELEGRAM_UPDATE_MODE=webhook.',
           );
         } else {
           log.warn({ err, attempts }, 'poll lock preflight failed; starting anyway');
@@ -222,10 +222,13 @@ export async function startApp(): Promise<AppHandle> {
     }
     // Self-healing wrapper around the grammY runner. grammY treats 409 as a
     // fatal `task()` rejection, but operationally a 409 just means a stale
-    // long-poll on Telegram's side hasn't expired yet. Restart with linear
-    // backoff up to MAX_409_RESTARTS times; once an update flows the counter
-    // resets via the middleware above. After the cap we give up and let
-    // shutdown run so the operator sees a clear failure signal.
+    // long-poll on Telegram's side hasn't expired yet, or a zombie second
+    // instance briefly held the lock. Pattern aligned with Anthropic's
+    // claude-plugins-official PR #825 fix for the same issue: linear
+    // backoff (1 s → 15 s cap) and retry indefinitely. The counter resets
+    // the moment any update flows through the bot, so a single transient
+    // race never escalates and a rogue deploy that eventually dies is
+    // recovered from automatically.
     const buildRunner = (): RunnerHandle =>
       run(main.bot, {
         runner: {
@@ -237,9 +240,8 @@ export async function startApp(): Promise<AppHandle> {
         sink: { concurrency: config.RUNNER_CONCURRENCY },
       });
 
-    const MAX_409_RESTARTS = 6;
-    const RESTART_BASE_MS = 5_000;
-    const RESTART_MAX_MS = 30_000;
+    const RESTART_BASE_MS = 1_000;
+    const RESTART_MAX_MS = 15_000;
     let stopRequested = false;
     let restartTimer: NodeJS.Timeout | null = null;
 
@@ -249,12 +251,16 @@ export async function startApp(): Promise<AppHandle> {
       void task.catch((err: unknown) => {
         if (stopRequested) return;
         const code = (err as { error_code?: number }).error_code;
-        if (code === 409 && consecutive409s < MAX_409_RESTARTS) {
+        if (code === 409) {
           consecutive409s++;
           const delayMs = Math.min(consecutive409s * RESTART_BASE_MS, RESTART_MAX_MS);
+          const detail =
+            consecutive409s === 1
+              ? ' (another instance is polling - zombie from a previous run, or a second deployment?)'
+              : '';
           log.warn(
             { attempt: consecutive409s, delayMs },
-            'runner died with 409 — another getUpdates is active. Restarting with backoff.',
+            `runner died with 409${detail}. Retrying in ${delayMs}ms.`,
           );
           restartTimer = setTimeout(() => {
             restartTimer = null;
