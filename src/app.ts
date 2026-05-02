@@ -130,6 +130,16 @@ export async function startApp(): Promise<AppHandle> {
   const allowedUpdates = [...config.BOT_POLLING_ALLOWED_UPDATES] as AllowedUpdate[];
   main.bot.use(sequentialize((ctx) => ctx.from?.id?.toString()));
 
+  // Track the highest update_id we've acknowledged so the long-poll shutdown
+  // path can confirm it back to Telegram. Without this, our half of the
+  // long-poll stays "open" on Telegram's side until TELEGRAM_LONG_POLL_TIMEOUT
+  // expires (up to 50s) — the cause of every "I just restarted and got 409".
+  let lastAckedUpdateId = 0;
+  main.bot.use((ctx, next) => {
+    if (ctx.update.update_id > lastAckedUpdateId) lastAckedUpdateId = ctx.update.update_id;
+    return next();
+  });
+
   // 7) Start the main bot via the chosen update channel.
   let mainRunner: RunnerHandle | null = null;
   let stopMain: () => Promise<void>;
@@ -203,7 +213,27 @@ export async function startApp(): Promise<AppHandle> {
       'main bot started',
     );
     stopMain = async () => {
-      if (mainRunner) await mainRunner.stop();
+      if (mainRunner) {
+        try {
+          await mainRunner.stop();
+        } catch (err) {
+          log.warn({ err }, 'failed to stop runner');
+        }
+      }
+      // Graceful release: tell Telegram we've consumed up to lastAckedUpdateId.
+      // This closes the server-side long-poll session immediately so a
+      // restart within the next second succeeds — instead of hitting 409
+      // until the previous timeout expires.
+      try {
+        await main.bot.api.getUpdates({
+          offset: lastAckedUpdateId + 1,
+          timeout: 0,
+          limit: 1,
+        });
+      } catch {
+        // Best-effort. If this fails the preflight retry on the next boot
+        // still recovers within ~50s.
+      }
     };
   }
 

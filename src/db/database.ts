@@ -7,10 +7,19 @@
  * to `process.cwd()`) and configured with the WAL pragmas the rest of the
  * codebase expects:
  *
- *   - `journal_mode = WAL`        — concurrent readers, single writer
- *   - `synchronous = NORMAL`      — durable enough for our workload
- *   - `foreign_keys = ON`         — enforce referential integrity
- *   - `busy_timeout = 5000`       — wait 5s before raising SQLITE_BUSY
+ *   - `journal_mode = WAL`            — concurrent readers, single writer
+ *   - `synchronous = NORMAL`          — durable enough for WAL workloads
+ *   - `foreign_keys = ON`             — enforce referential integrity
+ *   - `busy_timeout = 5000`           — wait 5s before raising SQLITE_BUSY
+ *   - `cache_size = -32000`           — 32 MB page cache per connection
+ *   - `temp_store = MEMORY`           — keep tmp tables in RAM, not on disk
+ *   - `mmap_size = 134217728`         — 128 MB read-side mmap window
+ *   - `wal_autocheckpoint = 1000`     — checkpoint every 1000 WAL pages
+ *   - `journal_size_limit = 67108864` — truncate WAL back to ≤ 64 MB
+ *
+ * On close we run `PRAGMA optimize` so the next process boot starts with up
+ * to-date query-planner stats — the recommended end-of-session ritual since
+ * SQLite 3.18.
  *
  * If the underlying open fails (permission denied, missing parent dir that
  * could not be created, corrupt database, etc.) the runtime never silently
@@ -78,6 +87,14 @@ export function openDatabase(dbPath: string): DB {
     db.pragma('synchronous = NORMAL');
     db.pragma('foreign_keys = ON');
     db.pragma('busy_timeout = 5000');
+    // High-throughput / low-memory tuning. Numbers are conservative enough
+    // to fit a 1 GB container while still giving a meaningful page cache
+    // and read-side mmap window.
+    db.pragma('cache_size = -32000'); // 32 MB (negative = KB)
+    db.pragma('temp_store = MEMORY');
+    db.pragma('mmap_size = 134217728'); // 128 MB
+    db.pragma('wal_autocheckpoint = 1000');
+    db.pragma('journal_size_limit = 67108864'); // 64 MB
   } catch (cause) {
     try {
       db.close();
@@ -126,6 +143,14 @@ export function getDatabase(): DB {
 export function closeDatabase(): void {
   if (!cached) return;
   try {
+    // Refresh query-planner stats before close — cheap (no FULL ANALYZE) and
+    // recommended end-of-session by SQLite. Without this the planner can
+    // pick a worse plan after schema-shape changes.
+    try {
+      cached.pragma('optimize');
+    } catch {
+      // optimize is best-effort; never fail close on it.
+    }
     cached.close();
     if (cachedPath) {
       getLogger().info({ path: cachedPath }, 'db closed');
