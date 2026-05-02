@@ -46,6 +46,18 @@ timeout=0)` so Telegram releases the long-poll session immediately
   instead of holding it for up to 50 s. Translation: `Ctrl+C` →
   `pnpm dev` is sub-second again, no 409 wait.
 
+### Fixed (critical: 409 Conflict on every restart)
+
+- The main bot's row in `managed_bots` (mode `main_public`) was being picked
+  up by `ChildBotManager.startAll()`, which spun up a SECOND grammY runner
+  on the same `bot_id`. The bootstrap already owns the main bot's runner,
+  so two pollers were racing inside one process — Telegram answered every
+  `getUpdates` with **409 Conflict** and no token regen, no waiting, and
+  no shutdown discipline could resolve it. `BotRepository.listActive()` now
+  excludes `mode='main_public'`; the child manager only drives child bots,
+  the main bot stays exclusively owned by `src/app.ts`. This was the real
+  source of the persistent 409 on `pnpm dev` / `start.bat`.
+
 ### Fixed (operational reliability)
 
 - Main bot now self-heals its `managed_bots` row on every successful boot:

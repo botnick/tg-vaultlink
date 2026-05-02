@@ -217,6 +217,12 @@ export class BotService {
     return this.bots.listByOwner(owner.id);
   }
 
+  /**
+   * Active managed bots that the child manager should drive — i.e. excluding
+   * the main bot's own row. The main bot's runner is started by the app
+   * bootstrap, not the child manager; if both polled the same `bot_id`
+   * Telegram would return 409 Conflict on every getUpdates.
+   */
   listActive(): ManagedBotRow[] {
     return this.bots.listActive();
   }

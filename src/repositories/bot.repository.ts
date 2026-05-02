@@ -52,8 +52,14 @@ export class BotRepository {
     this.listByOwnerStmt = db.prepare(
       'SELECT * FROM managed_bots WHERE owner_user_id = ? ORDER BY id ASC',
     );
+    // NOTE: explicitly excludes `mode='main_public'`. The main bot row lives
+    // in `managed_bots` so the same code paths apply uniformly, but its
+    // grammY runner is owned by the bootstrap in `src/app.ts` — not the
+    // child manager. Including it here would make two runners (main + child)
+    // poll the same `bot_id`, which Telegram answers with a 409 Conflict and
+    // no amount of token regen or waiting will resolve. Child manager only.
     this.listActiveStmt = db.prepare(
-      "SELECT * FROM managed_bots WHERE status = 'active' ORDER BY id ASC",
+      "SELECT * FROM managed_bots WHERE status = 'active' AND mode != 'main_public' ORDER BY id ASC",
     );
     this.listAllStmt = db.prepare('SELECT * FROM managed_bots ORDER BY id ASC LIMIT ? OFFSET ?');
 
