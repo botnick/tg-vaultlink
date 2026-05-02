@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   poll lock from the previous process expires. Translation: a clean
   `Ctrl+C` followed by an immediate restart no longer fails with 409.
 
+### Reliability
+
+- Long-poll runner now self-heals on 409. grammY's runner treats 409 as a
+  fatal `task()` rejection, but operationally a 409 just means a stale
+  long-poll on Telegram's side hasn't expired yet. The wrapper restarts the
+  runner with linear backoff (5 s → 10 s → 15 s → 20 s → 25 s → 30 s) up to
+  six consecutive failures; the counter resets the moment any update flows
+  through the bot, so legitimate transient races never escalate to a
+  process exit. After the cap we log a clear "another deployment is
+  polling Telegram" message and shut down so the operator sees the real
+  failure signal.
+
 ### Performance
 
 - SQLite tuned for high-throughput, low-memory operation: `cache_size=-32000`

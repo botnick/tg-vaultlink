@@ -134,9 +134,14 @@ export async function startApp(): Promise<AppHandle> {
   // path can confirm it back to Telegram. Without this, our half of the
   // long-poll stays "open" on Telegram's side until TELEGRAM_LONG_POLL_TIMEOUT
   // expires (up to 50s) — the cause of every "I just restarted and got 409".
+  // Reaching this middleware also means an update flowed end-to-end, so it's
+  // the natural place to reset the consecutive-409 counter that drives the
+  // long-poll restart-with-backoff loop further down.
   let lastAckedUpdateId = 0;
+  let consecutive409s = 0;
   main.bot.use((ctx, next) => {
     if (ctx.update.update_id > lastAckedUpdateId) lastAckedUpdateId = ctx.update.update_id;
+    consecutive409s = 0;
     return next();
   });
 
@@ -215,20 +220,69 @@ export async function startApp(): Promise<AppHandle> {
         break;
       }
     }
-    mainRunner = run(main.bot, {
-      runner: {
-        fetch: {
-          allowed_updates: allowedUpdates,
-          timeout: config.TELEGRAM_LONG_POLL_TIMEOUT_SECONDS,
+    // Self-healing wrapper around the grammY runner. grammY treats 409 as a
+    // fatal `task()` rejection, but operationally a 409 just means a stale
+    // long-poll on Telegram's side hasn't expired yet. Restart with linear
+    // backoff up to MAX_409_RESTARTS times; once an update flows the counter
+    // resets via the middleware above. After the cap we give up and let
+    // shutdown run so the operator sees a clear failure signal.
+    const buildRunner = (): RunnerHandle =>
+      run(main.bot, {
+        runner: {
+          fetch: {
+            allowed_updates: allowedUpdates,
+            timeout: config.TELEGRAM_LONG_POLL_TIMEOUT_SECONDS,
+          },
         },
-      },
-      sink: { concurrency: config.RUNNER_CONCURRENCY },
-    });
+        sink: { concurrency: config.RUNNER_CONCURRENCY },
+      });
+
+    const MAX_409_RESTARTS = 6;
+    const RESTART_BASE_MS = 5_000;
+    const RESTART_MAX_MS = 30_000;
+    let stopRequested = false;
+    let restartTimer: NodeJS.Timeout | null = null;
+
+    const watchRunner = (handle: RunnerHandle): void => {
+      const task = handle.task();
+      if (!task) return;
+      void task.catch((err: unknown) => {
+        if (stopRequested) return;
+        const code = (err as { error_code?: number }).error_code;
+        if (code === 409 && consecutive409s < MAX_409_RESTARTS) {
+          consecutive409s++;
+          const delayMs = Math.min(consecutive409s * RESTART_BASE_MS, RESTART_MAX_MS);
+          log.warn(
+            { attempt: consecutive409s, delayMs },
+            'runner died with 409 — another getUpdates is active. Restarting with backoff.',
+          );
+          restartTimer = setTimeout(() => {
+            restartTimer = null;
+            if (stopRequested) return;
+            mainRunner = buildRunner();
+            watchRunner(mainRunner);
+          }, delayMs);
+          if (typeof restartTimer.unref === 'function') restartTimer.unref();
+          return;
+        }
+        log.error({ err }, 'main bot runner died');
+        void shutdown('mainRunner.died');
+      });
+    };
+
+    mainRunner = buildRunner();
+    watchRunner(mainRunner);
     log.info(
       { username: main.record.username, concurrency: config.RUNNER_CONCURRENCY },
       'main bot started',
     );
+
     stopMain = async () => {
+      stopRequested = true;
+      if (restartTimer) {
+        clearTimeout(restartTimer);
+        restartTimer = null;
+      }
       if (mainRunner) {
         try {
           await mainRunner.stop();
@@ -238,9 +292,9 @@ export async function startApp(): Promise<AppHandle> {
       }
       // Graceful release. Telegram's API contract: a getUpdates call with
       // `offset=-1` is the "I'm done, forget any previous getUpdates" signal
-      // — per docs "All previous updates will be forgotten". Combined with
-      // the `lastAckedUpdateId+1` hint we also pass the latest offset we
-      // saw so Telegram doesn't redeliver anything we already handled.
+      // — per docs "All previous updates will be forgotten". When we have
+      // acked at least one update we pass `lastAckedUpdateId+1` instead so
+      // Telegram doesn't redeliver anything we already handled.
       try {
         await main.bot.api.getUpdates({
           offset: lastAckedUpdateId > 0 ? lastAckedUpdateId + 1 : -1,
@@ -354,19 +408,9 @@ export async function startApp(): Promise<AppHandle> {
     setImmediate(() => process.exit(code));
   };
 
-  // Long-poll mode only: watch the runner's `task()` promise. It resolves on
-  // a clean stop and rejects on a fatal polling error (auth revoked, exhausted
-  // retries, etc.). In webhook mode there is no runner — Telegram POSTs in
-  // and the Hono server's lifecycle is what we care about.
-  if (mainRunner) {
-    const mainTask = mainRunner.task();
-    if (mainTask) {
-      void mainTask.catch((err: unknown) => {
-        log.error({ err }, 'main bot runner died');
-        void shutdown('mainRunner.died');
-      });
-    }
-  }
+  // The long-poll branch already wires its own runner watcher (with the
+  // 409 restart-with-backoff logic). Webhook mode has no runner — Telegram
+  // POSTs in and the Hono server's lifecycle is what matters there.
 
   process.once('SIGINT', () => void shutdown('SIGINT'));
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
