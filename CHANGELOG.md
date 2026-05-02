@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `docs/SETUP.md` — Thai walkthrough that covers BotFather setup, encryption
+  key generation, Mini App via ngrok/cloudflared, BotFather menu-button wiring,
+  and the 409 / 401 / port-conflict recipes that come up during local testing.
+- Mini App Vite dev server now proxies `/api` and `/healthz` to the bot's HTTP
+  server on `127.0.0.1:8081` and whitelists `.ngrok-free.app`, `.ngrok.io`, and
+  `.trycloudflare.com`, so a single tunnel on port 5173 covers both frontend
+  and API without mixed-content errors.
+
+### Changed
+
+- `apps/mini-app/.env.example` now defaults `VITE_API_BASE_URL=/api/v1` so the
+  same value works in localhost and behind any tunnel/proxy.
+
 ### Fixed
 
 - `pnpm dev`, `pnpm start`, `pnpm db:migrate`, and `pnpm db:reset` now load

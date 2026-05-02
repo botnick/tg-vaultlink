@@ -13,3 +13,6 @@ data/.DS_Store
 .idea
 coverage
 .nyc_output
+
+# Local Windows helper scripts — kept out of the repo.
+*.bat

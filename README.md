@@ -43,6 +43,8 @@ pnpm dev
 
 `pnpm dev` runs the bot under `tsx watch`. For production builds use `pnpm build` then `pnpm start`.
 
+For a step-by-step walkthrough — BotFather, encryption keys, Mini App via ngrok, troubleshooting 409/401, port conflicts — see [`docs/SETUP.md`](./docs/SETUP.md) (Thai).
+
 ## Quick start (Docker)
 
 ```powershell
