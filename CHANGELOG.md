@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed (UX)
 
+- **Less chatter, same gates.** The bot now stays quiet when nothing needs
+  saying. Specifically:
+  - Batch decode no longer posts a "Found N codes" banner or per-item
+    success/failure replies. The delivered files are themselves the success
+    indicator. If any code in the paste fails, ONE compact summary at the
+    end lists the failed codes — that's it.
+  - Single-code decode keeps the specific error replies (password prompt,
+    locked, expired, …) so the user knows what to do next.
+  - `help.intro`, `decode.prompt`, and `decode.prefix_required` rewritten as
+    one-liners. Verbose multi-step "1. … 2. … 3. …" intros are gone.
+  - Security gates are unchanged: strict `botname:CODE` prefix still
+    enforced, rate limits still apply, password / lock / expiry / report
+    flows untouched.
 - **Albums become Collections automatically.** When the user uploads multiple
   media as one Telegram album, the upload router now detects the shared
   `media_group_id`, opens a draft, appends each item, and debounce-finalises

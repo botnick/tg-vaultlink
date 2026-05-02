@@ -2,18 +2,13 @@
  * Decode router — plain-text share-code lookups.
  *
  * Strict-prefix UX: the user must type the FULL `botname:CODE` form (or paste
- * a Telegram deep link). Bare `CODE` strings are rejected — that disambiguates
- * cross-bot lookups and keeps "I sent CODE" copy-paste mistakes from silently
- * resolving to the wrong bot's namespace.
+ * a Telegram deep link). Bare codes are rejected.
  *
- * Batch UX: a single message may carry MANY share-code lines. Every line that
- * parses as a `botname:CODE` (optionally with a trailing `:password`) is
- * delivered in input order, with a small spacing delay so we stay inside the
- * Telegram per-chat rate window. The reply summarises hits and failures
- * once at the end.
- *
- * Single-line messages skip the batch chrome: one delivery, one reply, the
- * existing UX preserved.
+ * Batch UX is intentionally quiet: paste many `botname:CODE` lines, the bot
+ * delivers each in input order with a small spacing delay, and says nothing
+ * extra unless something fails. The delivered files are themselves the
+ * success indicator — no "Found N codes" banner, no per-item ack. If any
+ * line fails, ONE summary at the end lists the failed codes.
  */
 
 import { Composer } from 'grammy';
@@ -135,46 +130,51 @@ export function registerDecodeRouter(composer: Composer<AppContext>): void {
     }
 
     if (decodes.length === 1) {
+      // Single-code path: keep specific per-error replies (password prompt,
+      // locked, expired, etc.) so the user knows exactly what to do next.
       const only = decodes[0];
-      if (only) await processOne(ctx, only);
+      if (only) await processOne(ctx, only, /*silent=*/ false);
       return;
     }
 
-    // Cap the batch so a paste of thousands of lines doesn't pin the worker.
+    // Batch path: stay quiet. Cap to avoid a runaway paste.
     const cap = Math.max(1, ctx.config.MAX_BULK_SEND_ITEMS);
     const batch = decodes.slice(0, cap);
-    await ctx.reply(ctx.t('decode.batch_starting', { count: batch.length }));
 
-    let ok = 0;
-    let failed = 0;
+    const failedCodes: string[] = [];
     for (let i = 0; i < batch.length; i++) {
       const item = batch[i];
       if (!item) continue;
-      const success = await processOne(ctx, item, /*silentSuccess=*/ false);
-      if (success) ok++;
-      else failed++;
+      const success = await processOne(ctx, item, /*silent=*/ true);
+      if (!success) failedCodes.push(item.shareCode);
       if (i < batch.length - 1) await sleep(BATCH_DELAY_MS);
     }
 
-    const failedSuffix =
-      failed > 0 ? ctx.t('decode.batch_failed_suffix', { failed }) : '';
-    await ctx.reply(
-      ctx.t('decode.batch_summary', { ok, total: batch.length, failedSuffix }),
-    );
+    if (failedCodes.length > 0) {
+      await ctx.reply(
+        ctx.t('decode.batch_failures', {
+          failed: failedCodes.length,
+          codes: failedCodes.map((c) => escapeHtml(c)).join(', '),
+        }),
+        { parse_mode: 'HTML' },
+      );
+    }
   });
 }
 
 /**
  * Resolve and deliver a single share code. Returns `true` on successful
- * delivery, `false` on any handled failure (locked / expired / not found /
- * password required / permission denied). Unhandled errors propagate.
+ * delivery, `false` on any handled failure. When `silent` is true, no
+ * per-item failure reply is sent — the caller is expected to roll failures
+ * into a single end-of-batch summary. Single-code mode keeps the specific
+ * error replies (password prompt, locked, expired, …) so the user knows
+ * what to do.
  */
 async function processOne(
   ctx: AppContext,
   prepared: PreparedDecode,
-  silentSuccess = false,
+  silent: boolean,
 ): Promise<boolean> {
-  void silentSuccess;
   const resolved = await ctx.services.share.resolveShareCode({
     rawCode: prepared.rawCode,
     contextBot: ctx.bot,
@@ -187,7 +187,7 @@ async function processOne(
         password: prepared.password,
       });
     } catch (err) {
-      return await handleAccessError(ctx, prepared, err);
+      return await handleAccessError(ctx, prepared, err, silent);
     }
     const { sendCollectionPreview } = await import('./collection.router.js');
     await sendCollectionPreview(ctx, resolved.collection);
@@ -208,52 +208,43 @@ async function processOne(
         decoded.file,
       );
       if (!decision.allowed) {
-        await ctx.reply(
-          ctx.t('decode.batch_item_error', {
-            shareCode: escapeHtml(prepared.shareCode),
-            reason: ctx.t('decode.permission_denied'),
-          }),
-          { parse_mode: 'HTML' },
-        );
+        if (!silent) await ctx.reply(ctx.t('decode.permission_denied'));
         return false;
       }
       await deliverFile(ctx, decoded.file);
       return true;
     } catch (err) {
-      return await handleAccessError(ctx, prepared, err);
+      return await handleAccessError(ctx, prepared, err, silent);
     }
   }
 
   // No match.
-  await ctx.reply(
-    ctx.t('decode.batch_item_error', {
-      shareCode: escapeHtml(prepared.shareCode),
-      reason: ctx.t('decode.not_found'),
-    }),
-    { parse_mode: 'HTML' },
-  );
+  if (!silent) await ctx.reply(ctx.t('decode.not_found'));
   return false;
 }
 
 /**
- * Map an AppError raised during accessibility/decoding to a per-item user
- * reply and return `false`. Re-throws unhandled errors so the global error
- * boundary still sees them.
+ * Map an AppError raised during accessibility/decoding to a user reply and
+ * return `false`. In silent mode (batch path) we suppress the reply and just
+ * report failure; the batch summary names the failed code.
  */
 async function handleAccessError(
   ctx: AppContext,
   prepared: PreparedDecode,
   err: unknown,
+  silent: boolean,
 ): Promise<boolean> {
   if (!(err instanceof AppError)) throw err;
 
   let reasonKey: string | null = null;
   switch (err.code) {
     case ErrorCode.PASSWORD_REQUIRED:
-      await ctx.reply(
-        ctx.t('decode.password_required', { shareCode: escapeHtml(prepared.shareCode) }),
-        { parse_mode: 'HTML' },
-      );
+      if (!silent) {
+        await ctx.reply(
+          ctx.t('decode.password_required', { shareCode: escapeHtml(prepared.shareCode) }),
+          { parse_mode: 'HTML' },
+        );
+      }
       return false;
     case ErrorCode.PASSWORD_INCORRECT:
       reasonKey = 'decode.password_incorrect';
@@ -271,12 +262,6 @@ async function handleAccessError(
       throw err;
   }
 
-  await ctx.reply(
-    ctx.t('decode.batch_item_error', {
-      shareCode: escapeHtml(prepared.shareCode),
-      reason: ctx.t(reasonKey),
-    }),
-    { parse_mode: 'HTML' },
-  );
+  if (!silent) await ctx.reply(ctx.t(reasonKey));
   return false;
 }
