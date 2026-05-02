@@ -66,13 +66,7 @@ export interface InitDataVerifyResult {
 
 export interface InitDataVerifyError {
   ok: false;
-  reason:
-    | 'malformed'
-    | 'missing_hash'
-    | 'bad_signature'
-    | 'expired'
-    | 'missing_user'
-    | 'no_token';
+  reason: 'malformed' | 'missing_hash' | 'bad_signature' | 'expired' | 'missing_user' | 'no_token';
 }
 
 /**
@@ -123,9 +117,7 @@ export function verifyInitData(
   const secretKey = createHmac('sha256', Buffer.from('WebAppData'))
     .update(Buffer.from(botToken))
     .digest();
-  const computedHash = createHmac('sha256', secretKey)
-    .update(dataCheckString)
-    .digest('hex');
+  const computedHash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
   // timingSafeEqual requires equal-length buffers; if the supplied hash is the
   // wrong length we treat it as a bad signature without leaking that fact.

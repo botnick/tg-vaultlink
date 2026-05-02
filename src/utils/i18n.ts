@@ -34,18 +34,11 @@ export function isSupportedLocale(input: string): input is Locale {
  * fails loud during development and gets caught by the global error boundary
  * in production.
  */
-export function t(
-  locale: Locale,
-  key: string,
-  params?: Record<string, string | number>,
-): string {
+export function t(locale: Locale, key: string, params?: Record<string, string | number>): string {
   const table = LOCALES[locale];
   const template = table[key];
   if (template === undefined) {
-    throw new AppError(
-      ErrorCode.INTERNAL_ERROR,
-      `missing translation key: ${locale}/${key}`,
-    );
+    throw new AppError(ErrorCode.INTERNAL_ERROR, `missing translation key: ${locale}/${key}`);
   }
   if (params === undefined || Object.keys(params).length === 0) {
     if (template.includes('{{')) {

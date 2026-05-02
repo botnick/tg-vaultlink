@@ -54,8 +54,14 @@ export class AppError extends Error {
     this.expose = opts?.expose ?? false;
     this.meta = opts?.meta;
     // Preserve stack across V8 / non-V8 engines.
-    if (typeof (Error as unknown as { captureStackTrace?: unknown }).captureStackTrace === 'function') {
-      (Error as unknown as { captureStackTrace: (t: object, c?: Function) => void }).captureStackTrace(this, AppError);
+    if (
+      typeof (Error as unknown as { captureStackTrace?: unknown }).captureStackTrace === 'function'
+    ) {
+      (
+        Error as unknown as {
+          captureStackTrace: (t: object, c?: new (...args: never[]) => unknown) => void;
+        }
+      ).captureStackTrace(this, AppError);
     }
   }
 

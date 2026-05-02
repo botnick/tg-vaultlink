@@ -14,9 +14,7 @@ import type { AppContext } from '../context.js';
 import { isSupportedLocale } from '../../utils/i18n.js';
 
 function settingsKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('🇹🇭 ภาษาไทย', 'cb-locale:th')
-    .text('🇬🇧 English', 'cb-locale:en');
+  return new InlineKeyboard().text('🇹🇭 ภาษาไทย', 'cb-locale:th').text('🇬🇧 English', 'cb-locale:en');
 }
 
 function miniAppButton(ctx: AppContext, path: string, label: string): InlineKeyboard | null {
@@ -28,11 +26,7 @@ function miniAppButton(ctx: AppContext, path: string, label: string): InlineKeyb
   return new InlineKeyboard().webApp(label, url);
 }
 
-async function replyMiniAppOrDisabled(
-  ctx: AppContext,
-  path: string,
-  label: string,
-): Promise<void> {
+async function replyMiniAppOrDisabled(ctx: AppContext, path: string, label: string): Promise<void> {
   const kb = miniAppButton(ctx, path, label);
   if (!kb) {
     await ctx.reply(ctx.t('common.error.feature_disabled'));

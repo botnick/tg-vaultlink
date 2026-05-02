@@ -29,11 +29,7 @@ import { AppError } from '../utils/errors.js';
 import { getLogger } from '../logger/logger.js';
 import type { Logger } from 'pino';
 import type { AppServices, AppRepos } from './types.js';
-import {
-  authMiddleware,
-  corsMiddleware,
-  type MiniAppEnv,
-} from './middlewares.js';
+import { authMiddleware, corsMiddleware, type MiniAppEnv } from './middlewares.js';
 import { settingsRoutes } from './routes/settings.routes.js';
 import { filesRoutes } from './routes/files.routes.js';
 import { botsRoutes } from './routes/bots.routes.js';

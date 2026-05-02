@@ -73,17 +73,17 @@ pnpm --dir apps/mini-app typecheck
 
 ## Where to add things
 
-| Kind of change | Where it lives |
-| --- | --- |
-| Pure helper logic | `src/utils/` |
-| Domain logic with collaborators | `src/services/` |
-| SQL access (one repo per table family) | `src/repositories/` |
-| New SQL table or column | a new file under `src/db/migrations/` |
-| New bot command or wizard step | `src/bot/routers/` |
-| New Mini App API route | `src/miniapp/routes/` |
-| User-visible text | **both** `src/locales/th.json` and `src/locales/en.json` |
-| New env variable | add to `src/config/env.ts`, mirror in `.env.example`, cover in `tests/env.test.ts` |
-| Mini App frontend | `apps/mini-app/` (see its own README) |
+| Kind of change                         | Where it lives                                                                     |
+| -------------------------------------- | ---------------------------------------------------------------------------------- |
+| Pure helper logic                      | `src/utils/`                                                                       |
+| Domain logic with collaborators        | `src/services/`                                                                    |
+| SQL access (one repo per table family) | `src/repositories/`                                                                |
+| New SQL table or column                | a new file under `src/db/migrations/`                                              |
+| New bot command or wizard step         | `src/bot/routers/`                                                                 |
+| New Mini App API route                 | `src/miniapp/routes/`                                                              |
+| User-visible text                      | **both** `src/locales/th.json` and `src/locales/en.json`                           |
+| New env variable                       | add to `src/config/env.ts`, mirror in `.env.example`, cover in `tests/env.test.ts` |
+| Mini App frontend                      | `apps/mini-app/` (see its own README)                                              |
 
 ## Releasing
 

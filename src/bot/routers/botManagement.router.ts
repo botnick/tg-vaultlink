@@ -172,7 +172,14 @@ export async function handleBotsCommand(ctx: AppContext): Promise<void> {
   }
 
   const kb = new InlineKeyboard()
-    .text('➕ ' + ctx.t('bot.add.usage').split('\n')[0]!.replace(/<[^>]+>/g, ''), 'bots:add')
+    .text(
+      '➕ ' +
+        ctx
+          .t('bot.add.usage')
+          .split('\n')[0]!
+          .replace(/<[^>]+>/g, ''),
+      'bots:add',
+    )
     .row()
     .text('➕ ' + 'add_bot_open', 'bots:add_open');
 

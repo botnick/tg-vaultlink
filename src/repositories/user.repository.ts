@@ -80,10 +80,7 @@ export class UserRepository {
     return row;
   }
 
-  update(
-    id: number,
-    fields: Partial<Pick<UserRow, UpdatableField>>,
-  ): UserRow {
+  update(id: number, fields: Partial<Pick<UserRow, UpdatableField>>): UserRow {
     const allowed: UpdatableField[] = ['username', 'first_name', 'last_name', 'locale', 'role'];
     const params: Record<string, unknown> = { id, now: nowIso() };
     const setClauses: string[] = [];

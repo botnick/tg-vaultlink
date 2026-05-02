@@ -84,7 +84,10 @@ export class RateLimitService {
       case 'upload':
         return { limit: this.config.UPLOAD_LIMIT_PER_HOUR, windowMs: RATE_LIMIT_WINDOWS.upload };
       case 'download':
-        return { limit: this.config.DOWNLOAD_LIMIT_PER_HOUR, windowMs: RATE_LIMIT_WINDOWS.download };
+        return {
+          limit: this.config.DOWNLOAD_LIMIT_PER_HOUR,
+          windowMs: RATE_LIMIT_WINDOWS.download,
+        };
       case 'add_bot':
         return { limit: this.config.ADD_BOT_LIMIT_PER_DAY, windowMs: RATE_LIMIT_WINDOWS.add_bot };
       case 'report':

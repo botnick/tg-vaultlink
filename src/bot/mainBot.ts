@@ -58,7 +58,10 @@ export async function bootstrapMainBot(
   // becomes the main bot's `owner_user_id`.
   const firstAdminId = config.ADMIN_IDS[0];
   if (!firstAdminId) {
-    throw new AppError(ErrorCode.CONFIG_INVALID, 'ADMIN_IDS must list at least one Telegram user ID');
+    throw new AppError(
+      ErrorCode.CONFIG_INVALID,
+      'ADMIN_IDS must list at least one Telegram user ID',
+    );
   }
 
   let ownerRow = repos.users.findByTelegramId(firstAdminId);
@@ -144,11 +147,9 @@ export const defaultGetMeFn: GetMeFn = async (token, apiBaseUrl) => {
   const url = `${apiBaseUrl.replace(/\/+$/, '')}/bot${token}/getMe`;
   const res = await fetch(url, { method: 'GET' });
   if (!res.ok) {
-    throw new AppError(
-      ErrorCode.BOT_TOKEN_INVALID,
-      `getMe failed with status ${res.status}`,
-      { meta: { status: res.status } },
-    );
+    throw new AppError(ErrorCode.BOT_TOKEN_INVALID, `getMe failed with status ${res.status}`, {
+      meta: { status: res.status },
+    });
   }
   let body: unknown;
   try {

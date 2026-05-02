@@ -60,10 +60,7 @@ export async function sendCollectionPreview(
   await ctx.reply(page.caption, { parse_mode: 'HTML', reply_markup: kb });
 }
 
-async function deliverItemsBatch(
-  ctx: AppContext,
-  items: CollectionItemRow[],
-): Promise<number> {
+async function deliverItemsBatch(ctx: AppContext, items: CollectionItemRow[]): Promise<number> {
   let sent = 0;
   for (const it of items) {
     try {
@@ -277,10 +274,7 @@ export function registerCollectionRouter(composer: Composer<AppContext>): void {
       await ctx.answerCallbackQuery({ text: ctx.t('decode.not_found') });
       return;
     }
-    if (
-      !ctx.services.permission.isAdmin(ctx.user) &&
-      collection.owner_user_id !== ctx.user.id
-    ) {
+    if (!ctx.services.permission.isAdmin(ctx.user) && collection.owner_user_id !== ctx.user.id) {
       await ctx.answerCallbackQuery({ text: ctx.t('files.not_yours') });
       return;
     }
@@ -296,10 +290,7 @@ export function registerCollectionRouter(composer: Composer<AppContext>): void {
       await ctx.answerCallbackQuery({ text: ctx.t('decode.not_found') });
       return;
     }
-    if (
-      !ctx.services.permission.isAdmin(ctx.user) &&
-      collection.owner_user_id !== ctx.user.id
-    ) {
+    if (!ctx.services.permission.isAdmin(ctx.user) && collection.owner_user_id !== ctx.user.id) {
       await ctx.answerCallbackQuery({ text: ctx.t('files.not_yours') });
       return;
     }
@@ -316,10 +307,7 @@ export function registerCollectionRouter(composer: Composer<AppContext>): void {
       await ctx.answerCallbackQuery({ text: ctx.t('decode.not_found') });
       return;
     }
-    if (
-      !ctx.services.permission.isAdmin(ctx.user) &&
-      collection.owner_user_id !== ctx.user.id
-    ) {
+    if (!ctx.services.permission.isAdmin(ctx.user) && collection.owner_user_id !== ctx.user.id) {
       await ctx.answerCallbackQuery({ text: ctx.t('files.not_yours') });
       return;
     }

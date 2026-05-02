@@ -54,9 +54,7 @@ export class BotRepository {
     this.listActiveStmt = db.prepare(
       "SELECT * FROM managed_bots WHERE status = 'active' ORDER BY id ASC",
     );
-    this.listAllStmt = db.prepare(
-      'SELECT * FROM managed_bots ORDER BY id ASC LIMIT ? OFFSET ?',
-    );
+    this.listAllStmt = db.prepare('SELECT * FROM managed_bots ORDER BY id ASC LIMIT ? OFFSET ?');
 
     this.setStatusStmt = db.prepare(
       `UPDATE managed_bots
@@ -72,9 +70,7 @@ export class BotRepository {
     );
 
     this.countAllStmt = db.prepare('SELECT COUNT(*) AS n FROM managed_bots');
-    this.countByStatusStmt = db.prepare(
-      'SELECT COUNT(*) AS n FROM managed_bots WHERE status = ?',
-    );
+    this.countByStatusStmt = db.prepare('SELECT COUNT(*) AS n FROM managed_bots WHERE status = ?');
     this.countByOwnerStmt = db.prepare(
       'SELECT COUNT(*) AS n FROM managed_bots WHERE owner_user_id = ?',
     );

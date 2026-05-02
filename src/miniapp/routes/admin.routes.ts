@@ -16,11 +16,7 @@ import type { AppServices, AppRepos } from '../types.js';
 import { adminMiddleware } from '../middlewares.js';
 import { toBotDto } from './bots.routes.js';
 import { AppError, ErrorCode } from '../../utils/errors.js';
-import type {
-  ReportStatus,
-  FileRow,
-  CollectionRow,
-} from '../../types/index.js';
+import type { ReportStatus, FileRow, CollectionRow } from '../../types/index.js';
 
 export interface AdminRouteDeps {
   services: AppServices;
@@ -131,16 +127,12 @@ export function adminRoutes(deps: AdminRouteDeps): Hono<MiniAppEnv> {
     if (!Number.isFinite(id)) {
       throw new AppError(ErrorCode.INVALID_INPUT, 'invalid report id', { expose: true });
     }
-    const body = await c.req
-      .json<{ status?: unknown }>()
-      .catch(() => ({}) as { status?: unknown });
+    const body = await c.req.json<{ status?: unknown }>().catch(() => ({}) as { status?: unknown });
     const status = body.status;
     if (status !== 'reviewed' && status !== 'dismissed') {
-      throw new AppError(
-        ErrorCode.INVALID_INPUT,
-        'status must be reviewed or dismissed',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.INVALID_INPUT, 'status must be reviewed or dismissed', {
+        expose: true,
+      });
     }
     // The report service's setStatus only needs the row's id; we pass a
     // minimal stub so we don't depend on a `findById` accessor the repo
@@ -320,9 +312,7 @@ export function adminRoutes(deps: AdminRouteDeps): Hono<MiniAppEnv> {
     if (!target) {
       throw new AppError(ErrorCode.USER_NOT_FOUND, 'user not found', { expose: true });
     }
-    const body = await c.req
-      .json<{ reason?: unknown }>()
-      .catch(() => ({}) as { reason?: unknown });
+    const body = await c.req.json<{ reason?: unknown }>().catch(() => ({}) as { reason?: unknown });
     const reason = typeof body.reason === 'string' ? body.reason : null;
     const updated = services.user.setBanned(target, true);
     services.audit.log('user.banned', {

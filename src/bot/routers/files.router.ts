@@ -102,9 +102,7 @@ export function registerFilesRouter(composer: Composer<AppContext>): void {
     ctx: AppContext,
     rawCode: string,
   ): Promise<{ file: import('../../types/index.js').FileRow } | null> {
-    const code = rawCode.includes(':')
-      ? (rawCode.split(':').pop() ?? '')
-      : rawCode;
+    const code = rawCode.includes(':') ? (rawCode.split(':').pop() ?? '') : rawCode;
     if (!code) {
       await ctx.reply(ctx.t('files.not_found', { code: escapeHtml(rawCode) }), {
         parse_mode: 'HTML',
@@ -116,8 +114,7 @@ export function registerFilesRouter(composer: Composer<AppContext>): void {
     // alone (codes are 4-64 chars from a 32-symbol alphabet; collisions per
     // owner are negligible at our volume), constrained to ownership below.
     const candidate =
-      ctx.repos.files.findByCode(ctx.bot.id, code) ??
-      ctx.repos.files.findByCodeAcrossBots(code);
+      ctx.repos.files.findByCode(ctx.bot.id, code) ?? ctx.repos.files.findByCodeAcrossBots(code);
 
     if (!candidate || candidate.is_deleted === 1) {
       await ctx.reply(ctx.t('files.not_found', { code: escapeHtml(code) }), {
@@ -217,21 +214,24 @@ export function registerFilesRouter(composer: Composer<AppContext>): void {
 
   // Per-row callbacks. They all share `files:<action>:<type>:<id>` so a
   // single regex covers them.
-  composer.callbackQuery(/^files:(copy_code|copy_link|open|delete|set_password|set_expiry|visibility):(file|collection):(\d+)$/, async (ctx) => {
-    const m = ctx.match;
-    if (!m) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-    const action = m[1] as string;
-    const type = m[2] as 'file' | 'collection';
-    const id = Number.parseInt(m[3] as string, 10);
-    if (!Number.isFinite(id)) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-    await handleFilesItemAction(ctx, action, type, id);
-  });
+  composer.callbackQuery(
+    /^files:(copy_code|copy_link|open|delete|set_password|set_expiry|visibility):(file|collection):(\d+)$/,
+    async (ctx) => {
+      const m = ctx.match;
+      if (!m) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      const action = m[1] as string;
+      const type = m[2] as 'file' | 'collection';
+      const id = Number.parseInt(m[3] as string, 10);
+      if (!Number.isFinite(id)) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      await handleFilesItemAction(ctx, action, type, id);
+    },
+  );
 }
 
 /* ----------------------------------------------------------------------- *
@@ -296,7 +296,9 @@ export async function handleFilesCommand(ctx: AppContext): Promise<void> {
     const shareCode = `${ctx.bot.username}:${r.code}`;
     const lockTag = r.is_locked === 1 ? ' 🔒' : '';
     const pwTag = r.hasPassword ? ' 🔑' : '';
-    lines.push(`• <code>${escapeHtml(shareCode)}</code> — ${escapeHtml(r.label)}${lockTag}${pwTag}`);
+    lines.push(
+      `• <code>${escapeHtml(shareCode)}</code> — ${escapeHtml(r.label)}${lockTag}${pwTag}`,
+    );
   }
 
   const opts: Parameters<typeof ctx.reply>[1] = { parse_mode: 'HTML' };
@@ -351,9 +353,7 @@ async function handleFilesItemAction(
         const deepLink = `${ctx.config.TELEGRAM_DEEP_LINK_BASE}/${ctx.bot.username}?start=${file.code}`;
         await ctx.answerCallbackQuery();
         await ctx.reply(
-          action === 'copy_code'
-            ? `<code>${escapeHtml(shareCode)}</code>`
-            : escapeHtml(deepLink),
+          action === 'copy_code' ? `<code>${escapeHtml(shareCode)}</code>` : escapeHtml(deepLink),
           { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
         );
         return;
@@ -406,9 +406,7 @@ async function handleFilesItemAction(
       const deepLink = `${ctx.config.TELEGRAM_DEEP_LINK_BASE}/${ctx.bot.username}?start=${coll.code}`;
       await ctx.answerCallbackQuery();
       await ctx.reply(
-        action === 'copy_code'
-          ? `<code>${escapeHtml(shareCode)}</code>`
-          : escapeHtml(deepLink),
+        action === 'copy_code' ? `<code>${escapeHtml(shareCode)}</code>` : escapeHtml(deepLink),
         { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
       );
       return;

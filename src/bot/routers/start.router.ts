@@ -95,10 +95,9 @@ export function registerStartRouter(composer: Composer<AppContext>): void {
     } catch (err) {
       if (err instanceof AppError && err.code === ErrorCode.PASSWORD_REQUIRED) {
         const shareCode = `${ctx.bot.username}:${isValidCode(arg) ? arg : arg}`;
-        await ctx.reply(
-          ctx.t('decode.password_required', { shareCode: escapeHtml(shareCode) }),
-          { parse_mode: 'HTML' },
-        );
+        await ctx.reply(ctx.t('decode.password_required', { shareCode: escapeHtml(shareCode) }), {
+          parse_mode: 'HTML',
+        });
         return;
       }
       throw err;

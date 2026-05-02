@@ -13,30 +13,17 @@
  */
 
 import type { Config } from '../config/env.js';
-import type {
-  FileRow,
-  FileType,
-  FileVisibility,
-  ManagedBotRow,
-  UserRow,
-} from '../types/index.js';
+import type { FileRow, FileType, FileVisibility, ManagedBotRow, UserRow } from '../types/index.js';
 import type { FileRepository } from '../repositories/file.repository.js';
 import type { BotRepository } from '../repositories/bot.repository.js';
 import type { AuditService } from './audit.service.js';
-import {
-  hashPassword,
-  verifyPassword,
-  validatePasswordLength,
-} from './password.service.js';
+import { hashPassword, verifyPassword, validatePasswordLength } from './password.service.js';
 import { AppError, ErrorCode } from '../utils/errors.js';
 import { generateCode } from '../utils/codeGenerator.js';
 import { parseShareCode } from '../utils/codeParser.js';
 import { addDays, isExpired } from '../utils/date.js';
 import { truncate } from '../utils/safeText.js';
-import {
-  CAPTION_MAX_LENGTH,
-  FILENAME_MAX_LENGTH,
-} from '../config/constants.js';
+import { CAPTION_MAX_LENGTH, FILENAME_MAX_LENGTH } from '../config/constants.js';
 
 export interface UploadInput {
   user: UserRow;
@@ -86,12 +73,7 @@ export class FileService {
   private readonly audit: AuditService;
   private readonly config: Config;
 
-  constructor(
-    files: FileRepository,
-    bots: BotRepository,
-    audit: AuditService,
-    config: Config,
-  ) {
+  constructor(files: FileRepository, bots: BotRepository, audit: AuditService, config: Config) {
     this.files = files;
     this.bots = bots;
     this.audit = audit;
@@ -118,22 +100,18 @@ export class FileService {
 
     // 2) Blocked extensions (only meaningful for files that carry a name).
     if (meta.file_name !== null && this.isBlockedExtension(meta.file_name)) {
-      throw new AppError(
-        ErrorCode.FILE_TYPE_BLOCKED,
-        'this file type is not allowed',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.FILE_TYPE_BLOCKED, 'this file type is not allowed', {
+        expose: true,
+      });
     }
 
     // 3) Password handling — feature flag + length check + hash.
     let passwordHash: string | null = null;
     if (input.password !== undefined && input.password !== null && input.password !== '') {
       if (!this.config.ENABLE_PASSWORD_PROTECTION) {
-        throw new AppError(
-          ErrorCode.FEATURE_DISABLED,
-          'password protection is disabled',
-          { expose: true },
-        );
+        throw new AppError(ErrorCode.FEATURE_DISABLED, 'password protection is disabled', {
+          expose: true,
+        });
       }
       validatePasswordLength(input.password);
       passwordHash = await hashPassword(input.password);
@@ -144,8 +122,7 @@ export class FileService {
 
     // 5) Sanitize bounded text fields.
     const caption = meta.caption === null ? null : truncate(meta.caption, CAPTION_MAX_LENGTH);
-    const fileName =
-      meta.file_name === null ? null : truncate(meta.file_name, FILENAME_MAX_LENGTH);
+    const fileName = meta.file_name === null ? null : truncate(meta.file_name, FILENAME_MAX_LENGTH);
 
     // 6) Allocate a fresh share code (per-bot uniqueness).
     const code = this.allocateCode(bot.id);
@@ -281,11 +258,9 @@ export class FileService {
   /** Set or replace a file password. */
   async setPassword(file: FileRow, password: string, actor: UserRow): Promise<FileRow> {
     if (!this.config.ENABLE_PASSWORD_PROTECTION) {
-      throw new AppError(
-        ErrorCode.FEATURE_DISABLED,
-        'password protection is disabled',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.FEATURE_DISABLED, 'password protection is disabled', {
+        expose: true,
+      });
     }
     validatePasswordLength(password);
     const hash = await hashPassword(password);

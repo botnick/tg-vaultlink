@@ -8,7 +8,7 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'data/**', 'coverage/**'],
+    ignores: ['dist/**', 'node_modules/**', 'data/**', 'coverage/**', 'apps/**', '*.config.ts'],
   },
   {
     files: ['**/*.ts'],

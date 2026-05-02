@@ -78,10 +78,7 @@ function defaultConfig(): Config {
     REPORT_LIMIT_PER_HOUR: 20,
     AUTO_LOCK_REPORT_THRESHOLD: 3,
     DEFAULT_FILE_EXPIRY_DAYS: 30,
-    BOT_POLLING_ALLOWED_UPDATES: Object.freeze([
-      'message',
-      'callback_query',
-    ]) as readonly string[],
+    BOT_POLLING_ALLOWED_UPDATES: Object.freeze(['message', 'callback_query']) as readonly string[],
     ENABLE_PASSWORD_PROTECTION: true,
     ENABLE_FILE_EXPIRY: true,
     ENABLE_REPORTS: true,

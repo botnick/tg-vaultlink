@@ -24,8 +24,7 @@ export const qk = {
 
   collections: {
     all: ['collections'] as const,
-    list: (page: number, pageSize: number) =>
-      ['collections', 'list', page, pageSize] as const,
+    list: (page: number, pageSize: number) => ['collections', 'list', page, pageSize] as const,
     detail: (id: number | string) => ['collections', 'detail', String(id)] as const,
     items: (id: number | string, page: number, pageSize: number) =>
       ['collections', 'items', String(id), page, pageSize] as const,

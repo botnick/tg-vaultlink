@@ -31,8 +31,7 @@ const DEEP_LINK_RE =
   /^https?:\/\/(?:t\.me|telegram\.me)\/([A-Za-z][A-Za-z0-9_]{2,28}[Bb][Oo][Tt])\?start=([A-Za-z2-9]{4,64})$/;
 
 /** Match `<botUsername>:<code>` with optional leading `@`. */
-const NAMESPACED_RE =
-  /^@?([A-Za-z][A-Za-z0-9_]{2,28}[Bb][Oo][Tt]):([A-Za-z2-9]{4,64})$/;
+const NAMESPACED_RE = /^@?([A-Za-z][A-Za-z0-9_]{2,28}[Bb][Oo][Tt]):([A-Za-z2-9]{4,64})$/;
 
 function isValidUsername(name: string): boolean {
   return TELEGRAM_BOT_USERNAME_REGEX.test(name);

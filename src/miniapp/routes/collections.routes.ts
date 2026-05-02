@@ -166,9 +166,7 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
   app.get('/collections/:id', (c) => {
     const row = loadOwned(deps, c.var.user.id, c.var.isAdmin, c.req.param('id'));
     const limit = DEFAULT_LIMIT;
-    const items = repos.collections
-      .listItems(row.id, { limit, offset: 0 })
-      .map(toItemDto);
+    const items = repos.collections.listItems(row.id, { limit, offset: 0 }).map(toItemDto);
     const counts = repos.collections.countItemsByType(row.id);
     const counts_by_type: Partial<Record<FileType, number>> = {};
     for (const [k, v] of Object.entries(counts)) {
@@ -187,9 +185,7 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
     const row = loadOwned(deps, c.var.user.id, c.var.isAdmin, c.req.param('id'));
     const limit = clampInt(c.req.query('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT);
     const offset = clampInt(c.req.query('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
-    const items = repos.collections
-      .listItems(row.id, { limit, offset })
-      .map(toItemDto);
+    const items = repos.collections.listItems(row.id, { limit, offset }).map(toItemDto);
     const total = repos.collections.countItems(row.id);
     c.header('Cache-Control', 'no-store');
     return c.json({ data: { items, total } });
@@ -214,20 +210,14 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
     if (Object.prototype.hasOwnProperty.call(body, 'description')) {
       const v = body.description;
       if (v !== null && typeof v !== 'string') {
-        throw new AppError(
-          ErrorCode.INVALID_INPUT,
-          'description must be a string or null',
-          { expose: true },
-        );
+        throw new AppError(ErrorCode.INVALID_INPUT, 'description must be a string or null', {
+          expose: true,
+        });
       }
       fields.description = v;
     }
     if (fields.title === undefined && fields.description === undefined) {
-      throw new AppError(
-        ErrorCode.INVALID_INPUT,
-        'no metadata fields to update',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.INVALID_INPUT, 'no metadata fields to update', { expose: true });
     }
     const updated = services.share.setMetadata(row, fields, c.var.user);
     c.header('Cache-Control', 'no-store');
@@ -263,9 +253,7 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
 
   app.post('/collections/:id/expiry', async (c) => {
     const row = loadOwned(deps, c.var.user.id, c.var.isAdmin, c.req.param('id'));
-    const body = await c.req
-      .json<{ days?: unknown }>()
-      .catch(() => ({}) as { days?: unknown });
+    const body = await c.req.json<{ days?: unknown }>().catch(() => ({}) as { days?: unknown });
     let days: number | null;
     if (body.days === null || body.days === undefined) {
       days = null;
@@ -277,11 +265,9 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
     ) {
       days = body.days;
     } else {
-      throw new AppError(
-        ErrorCode.INVALID_INPUT,
-        'days must be a non-negative integer or null',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.INVALID_INPUT, 'days must be a non-negative integer or null', {
+        expose: true,
+      });
     }
     const updated = services.share.setExpiry(row, days, c.var.user);
     c.header('Cache-Control', 'no-store');
@@ -294,17 +280,11 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
       .json<{ visibility?: unknown }>()
       .catch(() => ({}) as { visibility?: unknown });
     if (body.visibility !== 'public' && body.visibility !== 'private') {
-      throw new AppError(
-        ErrorCode.INVALID_INPUT,
-        'visibility must be "public" or "private"',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.INVALID_INPUT, 'visibility must be "public" or "private"', {
+        expose: true,
+      });
     }
-    const updated = services.share.setVisibility(
-      row,
-      body.visibility,
-      c.var.user,
-    );
+    const updated = services.share.setVisibility(row, body.visibility, c.var.user);
     c.header('Cache-Control', 'no-store');
     return c.json({ data: toSummary(updated) });
   });
@@ -316,20 +296,16 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
       .catch(() => ({}) as { ordered_ids?: unknown });
     const raw = body.ordered_ids;
     if (!Array.isArray(raw) || raw.length === 0) {
-      throw new AppError(
-        ErrorCode.INVALID_INPUT,
-        'ordered_ids must be a non-empty array',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.INVALID_INPUT, 'ordered_ids must be a non-empty array', {
+        expose: true,
+      });
     }
     const orderedIds: number[] = [];
     for (const v of raw) {
       if (typeof v !== 'number' || !Number.isFinite(v) || !Number.isInteger(v)) {
-        throw new AppError(
-          ErrorCode.INVALID_INPUT,
-          'ordered_ids entries must be integers',
-          { expose: true },
-        );
+        throw new AppError(ErrorCode.INVALID_INPUT, 'ordered_ids entries must be integers', {
+          expose: true,
+        });
       }
       orderedIds.push(v);
     }
@@ -347,11 +323,7 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
     }
     for (const id of orderedIds) {
       if (!validIds.has(id)) {
-        throw new AppError(
-          ErrorCode.INVALID_INPUT,
-          `unknown item id ${id}`,
-          { expose: true },
-        );
+        throw new AppError(ErrorCode.INVALID_INPUT, `unknown item id ${id}`, { expose: true });
       }
     }
     services.share.reorderItems(row, orderedIds, c.var.user);

@@ -41,14 +41,10 @@ export function truncate(input: string | null | undefined, max: number): string 
  * whitespace into a single space, then trim and `truncate(_, max)`. Useful
  * for log-friendly representations of arbitrary user input.
  */
-export function sanitizeOneLine(
-  input: string | null | undefined,
-  max: number,
-): string {
+export function sanitizeOneLine(input: string | null | undefined, max: number): string {
   if (input === null || input === undefined) return '';
   if (typeof input !== 'string') return '';
   // Drop ASCII control chars except tab (\x09) and newline (\x0A).
-  // eslint-disable-next-line no-control-regex
   const stripped = input.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '');
   // Collapse all whitespace runs (spaces, tabs, newlines) to a single space.
   const collapsed = stripped.replace(/\s+/g, ' ').trim();

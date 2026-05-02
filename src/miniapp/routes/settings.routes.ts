@@ -67,9 +67,7 @@ export function settingsRoutes(deps: SettingsRouteDeps): Hono<MiniAppEnv> {
   });
 
   app.patch('/settings', async (c) => {
-    const body = await c.req
-      .json<{ locale?: unknown }>()
-      .catch(() => ({}) as { locale?: unknown });
+    const body = await c.req.json<{ locale?: unknown }>().catch(() => ({}) as { locale?: unknown });
     if (!isSupportedLocale(body.locale)) {
       throw new AppError(
         ErrorCode.INVALID_INPUT,

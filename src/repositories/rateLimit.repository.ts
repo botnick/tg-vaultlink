@@ -72,8 +72,7 @@ export class RateLimitRepository {
       }
 
       const windowStartMs = Date.parse(existing.window_start);
-      const expired =
-        Number.isFinite(windowStartMs) && nowMs - windowStartMs >= windowMs;
+      const expired = Number.isFinite(windowStartMs) && nowMs - windowStartMs >= windowMs;
 
       if (expired) {
         const row = this.resetStmt.get({

@@ -8,14 +8,7 @@
 
 /* ---------- Primitive enums (mirroring backend) ---------- */
 
-export type FileType =
-  | 'document'
-  | 'photo'
-  | 'video'
-  | 'audio'
-  | 'voice'
-  | 'animation'
-  | 'sticker';
+export type FileType = 'document' | 'photo' | 'video' | 'audio' | 'voice' | 'animation' | 'sticker';
 export type FileVisibility = 'public' | 'private';
 export type Visibility = FileVisibility;
 export type BotMode = 'personal_public' | 'personal_private';

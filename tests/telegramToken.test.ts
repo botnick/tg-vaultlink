@@ -3,11 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  isValidTelegramToken,
-  parseTelegramBotId,
-  maskToken,
-} from '../src/utils/telegramToken.js';
+import { isValidTelegramToken, parseTelegramBotId, maskToken } from '../src/utils/telegramToken.js';
 import { AppError, ErrorCode } from '../src/utils/errors.js';
 
 const VALID = '12345:abcdefghijklmnopqrstuvwxyz0123456';

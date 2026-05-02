@@ -64,127 +64,127 @@ The variables below are the complete set declared in `src/config/env.ts` and mir
 
 ### Runtime
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `NODE_ENV` | `production` | yes | One of `development`, `production`, `test`. |
-| `APP_NAME` | `VaultLink Bot` | yes | Display name used in startup logs and admin surfaces. |
-| `APP_PUBLIC_URL` | `https://example.com` | yes | Canonical public URL for the deployment. Validated as `http(s)`; trailing slashes are stripped. |
+| Name             | Default               | Required | Description                                                                                     |
+| ---------------- | --------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `NODE_ENV`       | `production`          | yes      | One of `development`, `production`, `test`.                                                     |
+| `APP_NAME`       | `VaultLink Bot`       | yes      | Display name used in startup logs and admin surfaces.                                           |
+| `APP_PUBLIC_URL` | `https://example.com` | yes      | Canonical public URL for the deployment. Validated as `http(s)`; trailing slashes are stripped. |
 
 ### Telegram
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `TELEGRAM_API_BASE_URL` | `https://api.telegram.org` | yes | Bot API base URL. Override only if you run a local Bot API server. |
-| `TELEGRAM_DEEP_LINK_BASE` | `https://t.me` | yes | Used to build deep links for share codes. |
+| Name                      | Default                    | Required | Description                                                        |
+| ------------------------- | -------------------------- | -------- | ------------------------------------------------------------------ |
+| `TELEGRAM_API_BASE_URL`   | `https://api.telegram.org` | yes      | Bot API base URL. Override only if you run a local Bot API server. |
+| `TELEGRAM_DEEP_LINK_BASE` | `https://t.me`             | yes      | Used to build deep links for share codes.                          |
 
 ### Main bot
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `MAIN_BOT_TOKEN` | — | yes | Telegram bot token from BotFather. Validated against `^\d+:[A-Za-z0-9_-]{30,}$`. |
+| Name             | Default | Required | Description                                                                      |
+| ---------------- | ------- | -------- | -------------------------------------------------------------------------------- |
+| `MAIN_BOT_TOKEN` | —       | yes      | Telegram bot token from BotFather. Validated against `^\d+:[A-Za-z0-9_-]{30,}$`. |
 
 ### Database
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `DATABASE_PATH` | `./data/vaultlink.sqlite` | yes | Path to the SQLite file. The directory must be writable. WAL mode is used. |
+| Name            | Default                   | Required | Description                                                                |
+| --------------- | ------------------------- | -------- | -------------------------------------------------------------------------- |
+| `DATABASE_PATH` | `./data/vaultlink.sqlite` | yes      | Path to the SQLite file. The directory must be writable. WAL mode is used. |
 
 ### Crypto
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `TOKEN_ENCRYPTION_KEY` | — | yes | 32 bytes of entropy, base64-encoded. Generate with `pnpm generate:key`. Standard or url-safe base64 accepted; padding optional. |
+| Name                   | Default | Required | Description                                                                                                                     |
+| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `TOKEN_ENCRYPTION_KEY` | —       | yes      | 32 bytes of entropy, base64-encoded. Generate with `pnpm generate:key`. Standard or url-safe base64 accepted; padding optional. |
 
 ### Admin
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `ADMIN_IDS` | — | yes | Comma-separated Telegram numeric user IDs. The first entry is auto-seeded as `super_admin` on first run. |
+| Name        | Default | Required | Description                                                                                              |
+| ----------- | ------- | -------- | -------------------------------------------------------------------------------------------------------- |
+| `ADMIN_IDS` | —       | yes      | Comma-separated Telegram numeric user IDs. The first entry is auto-seeded as `super_admin` on first run. |
 
 ### Localization and logging
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `DEFAULT_LOCALE` | `th` | yes | One of `th`, `en`. Per-user locale overrides this. |
-| `LOG_LEVEL` | `info` | yes | One of `fatal`, `error`, `warn`, `info`, `debug`, `trace`. |
+| Name             | Default | Required | Description                                                |
+| ---------------- | ------- | -------- | ---------------------------------------------------------- |
+| `DEFAULT_LOCALE` | `th`    | yes      | One of `th`, `en`. Per-user locale overrides this.         |
+| `LOG_LEVEL`      | `info`  | yes      | One of `fatal`, `error`, `warn`, `info`, `debug`, `trace`. |
 
 ### Limits and moderation
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `CODE_LENGTH` | `12` | yes | Length of generated share codes; bounded `4..32`. The alphabet excludes `0/1/I/L/O` for readability. |
-| `MAX_FILE_SIZE_MB` | `50` | yes | Per-file upload ceiling in MiB; bounded `1..4096`. |
-| `BLOCKED_EXTENSIONS` | `.exe,.bat,.cmd,.scr,.ps1,.msi,.apk` | yes | Comma-separated list. Lowercased; a leading dot is added if missing. |
-| `UPLOAD_LIMIT_PER_HOUR` | `20` | yes | Per-user upload limit. |
-| `DOWNLOAD_LIMIT_PER_HOUR` | `100` | yes | Per-user decode limit. |
-| `ADD_BOT_LIMIT_PER_DAY` | `5` | yes | Per-user `/add_bot*` limit. |
-| `REPORT_LIMIT_PER_HOUR` | `10` | yes | Per-user `/report` limit. |
-| `AUTO_LOCK_REPORT_THRESHOLD` | `3` | yes | Number of pending reports that triggers auto-lock; bounded `>= 1`. |
-| `DEFAULT_FILE_EXPIRY_DAYS` | `0` | yes | `0` disables expiry; otherwise the default lifetime in days. |
+| Name                         | Default                              | Required | Description                                                                                          |
+| ---------------------------- | ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------- |
+| `CODE_LENGTH`                | `12`                                 | yes      | Length of generated share codes; bounded `4..32`. The alphabet excludes `0/1/I/L/O` for readability. |
+| `MAX_FILE_SIZE_MB`           | `50`                                 | yes      | Per-file upload ceiling in MiB; bounded `1..4096`.                                                   |
+| `BLOCKED_EXTENSIONS`         | `.exe,.bat,.cmd,.scr,.ps1,.msi,.apk` | yes      | Comma-separated list. Lowercased; a leading dot is added if missing.                                 |
+| `UPLOAD_LIMIT_PER_HOUR`      | `20`                                 | yes      | Per-user upload limit.                                                                               |
+| `DOWNLOAD_LIMIT_PER_HOUR`    | `100`                                | yes      | Per-user decode limit.                                                                               |
+| `ADD_BOT_LIMIT_PER_DAY`      | `5`                                  | yes      | Per-user `/add_bot*` limit.                                                                          |
+| `REPORT_LIMIT_PER_HOUR`      | `10`                                 | yes      | Per-user `/report` limit.                                                                            |
+| `AUTO_LOCK_REPORT_THRESHOLD` | `3`                                  | yes      | Number of pending reports that triggers auto-lock; bounded `>= 1`.                                   |
+| `DEFAULT_FILE_EXPIRY_DAYS`   | `0`                                  | yes      | `0` disables expiry; otherwise the default lifetime in days.                                         |
 
 ### Polling and feature flags
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `BOT_POLLING_ALLOWED_UPDATES` | `message,callback_query` | yes | Comma-separated allowed update types. Permitted values: `message`, `callback_query`, `edited_message`, `inline_query`, `chosen_inline_result`. |
-| `ENABLE_PASSWORD_PROTECTION` | `true` | yes | Toggle file passwords. |
-| `ENABLE_FILE_EXPIRY` | `true` | yes | Toggle file expiry. |
-| `ENABLE_REPORTS` | `true` | yes | Toggle the report flow. |
-| `ENABLE_CHILD_BOTS` | `true` | yes | Toggle `/add_bot*`. |
-| `ENABLE_ADMIN_BROADCAST` | `false` | yes | Toggle the broadcast admin command. |
+| Name                          | Default                  | Required | Description                                                                                                                                    |
+| ----------------------------- | ------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOT_POLLING_ALLOWED_UPDATES` | `message,callback_query` | yes      | Comma-separated allowed update types. Permitted values: `message`, `callback_query`, `edited_message`, `inline_query`, `chosen_inline_result`. |
+| `ENABLE_PASSWORD_PROTECTION`  | `true`                   | yes      | Toggle file passwords.                                                                                                                         |
+| `ENABLE_FILE_EXPIRY`          | `true`                   | yes      | Toggle file expiry.                                                                                                                            |
+| `ENABLE_REPORTS`              | `true`                   | yes      | Toggle the report flow.                                                                                                                        |
+| `ENABLE_CHILD_BOTS`           | `true`                   | yes      | Toggle `/add_bot*`.                                                                                                                            |
+| `ENABLE_ADMIN_BROADCAST`      | `false`                  | yes      | Toggle the broadcast admin command.                                                                                                            |
 
 ### Health server
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `HEALTH_SERVER_ENABLED` | `false` | yes | Optional HTTP liveness server. |
-| `HEALTH_SERVER_HOST` | `127.0.0.1` | yes | Bind host when enabled. |
-| `HEALTH_SERVER_PORT` | `8080` | yes | Bind port when enabled; bounded `0..65535`. |
+| Name                    | Default     | Required | Description                                 |
+| ----------------------- | ----------- | -------- | ------------------------------------------- |
+| `HEALTH_SERVER_ENABLED` | `false`     | yes      | Optional HTTP liveness server.              |
+| `HEALTH_SERVER_HOST`    | `127.0.0.1` | yes      | Bind host when enabled.                     |
+| `HEALTH_SERVER_PORT`    | `8080`      | yes      | Bind port when enabled; bounded `0..65535`. |
 
 ### Mini App
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `ENABLE_MINI_APP` | `false` | yes | When true the Hono API server starts and Mini App entry buttons are rendered. |
-| `MINI_APP_URL` | — | only when `ENABLE_MINI_APP=true` | Public URL of the Mini App frontend. Must be `http(s)`. |
-| `MINI_APP_API_BASE_URL` | — | only when `ENABLE_MINI_APP=true` | Public URL of the Hono API. The bind port is taken from this URL. |
-| `MINI_APP_ALLOWED_ORIGINS` | — | only when `ENABLE_MINI_APP=true` | Comma-separated CORS allowlist. Never wildcarded. |
-| `MINI_APP_INITDATA_MAX_AGE_SECONDS` | `86400` | yes | Maximum acceptable `auth_date` age for `Telegram.WebApp.initData`. Bounded `60..2592000`. |
+| Name                                | Default | Required                         | Description                                                                               |
+| ----------------------------------- | ------- | -------------------------------- | ----------------------------------------------------------------------------------------- |
+| `ENABLE_MINI_APP`                   | `false` | yes                              | When true the Hono API server starts and Mini App entry buttons are rendered.             |
+| `MINI_APP_URL`                      | —       | only when `ENABLE_MINI_APP=true` | Public URL of the Mini App frontend. Must be `http(s)`.                                   |
+| `MINI_APP_API_BASE_URL`             | —       | only when `ENABLE_MINI_APP=true` | Public URL of the Hono API. The bind port is taken from this URL.                         |
+| `MINI_APP_ALLOWED_ORIGINS`          | —       | only when `ENABLE_MINI_APP=true` | Comma-separated CORS allowlist. Never wildcarded.                                         |
+| `MINI_APP_INITDATA_MAX_AGE_SECONDS` | `86400` | yes                              | Maximum acceptable `auth_date` age for `Telegram.WebApp.initData`. Bounded `60..2592000`. |
 
 ### Collections
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `ENABLE_COLLECTIONS` | `true` | yes | Toggle multi-file share codes. |
-| `COLLECTION_PAGE_SIZE` | `10` | yes | Items per preview page; bounded `1..100`. |
-| `COLLECTION_DRAFT_TTL_MINUTES` | `60` | yes | Idle draft TTL; bounded `1..1440`. |
-| `COLLECTION_SEND_DELAY_MS` | `700` | yes | Pacing delay between bulk-send items; bounded `0..10000`. |
-| `MAX_COLLECTION_ITEMS` | `100` | yes | Upper bound on items per collection; bounded `1..10000`. |
-| `MAX_BULK_SEND_ITEMS` | `50` | yes | Upper bound on items per bulk-send invocation; bounded `1..1000`. |
+| Name                           | Default | Required | Description                                                       |
+| ------------------------------ | ------- | -------- | ----------------------------------------------------------------- |
+| `ENABLE_COLLECTIONS`           | `true`  | yes      | Toggle multi-file share codes.                                    |
+| `COLLECTION_PAGE_SIZE`         | `10`    | yes      | Items per preview page; bounded `1..100`.                         |
+| `COLLECTION_DRAFT_TTL_MINUTES` | `60`    | yes      | Idle draft TTL; bounded `1..1440`.                                |
+| `COLLECTION_SEND_DELAY_MS`     | `700`   | yes      | Pacing delay between bulk-send items; bounded `0..10000`.         |
+| `MAX_COLLECTION_ITEMS`         | `100`   | yes      | Upper bound on items per collection; bounded `1..10000`.          |
+| `MAX_BULK_SEND_ITEMS`          | `50`    | yes      | Upper bound on items per bulk-send invocation; bounded `1..1000`. |
 
 ### Telegram limits
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `TELEGRAM_GLOBAL_RATE_LIMIT_PER_SEC` | `30` | yes | Throttler global ceiling. |
-| `TELEGRAM_PER_CHAT_RATE_LIMIT_PER_SEC` | `1` | yes | Throttler per-chat ceiling. |
-| `TELEGRAM_PER_GROUP_RATE_LIMIT_PER_MIN` | `20` | yes | Throttler per-group ceiling. |
-| `TELEGRAM_MEDIA_GROUP_MAX_ITEMS` | `10` | yes | Cap on media-group items; bounded `2..10`. |
-| `TELEGRAM_MESSAGE_MAX_LENGTH` | `4096` | yes | Cap on outbound text length; bounded `1..4096`. |
-| `TELEGRAM_INLINE_KEYBOARD_MAX_BUTTONS` | `100` | yes | Cap on inline keyboard buttons. |
-| `TELEGRAM_INLINE_KEYBOARD_MAX_ROW_WIDTH` | `8` | yes | Cap on buttons per row. |
-| `TELEGRAM_CALLBACK_DATA_MAX_BYTES` | `64` | yes | Cap on callback-data payload size. |
-| `TELEGRAM_LONG_POLL_TIMEOUT_SECONDS` | `50` | yes | Long-poll timeout; bounded `1..50`. |
-| `TELEGRAM_AUTORETRY_MAX_ATTEMPTS` | `5` | yes | `@grammyjs/auto-retry` attempts on 429; bounded `0..10`. |
-| `TELEGRAM_AUTORETRY_MAX_DELAY_SECONDS` | `60` | yes | Cap on the auto-retry sleep window; bounded `0..600`. |
+| Name                                     | Default | Required | Description                                              |
+| ---------------------------------------- | ------- | -------- | -------------------------------------------------------- |
+| `TELEGRAM_GLOBAL_RATE_LIMIT_PER_SEC`     | `30`    | yes      | Throttler global ceiling.                                |
+| `TELEGRAM_PER_CHAT_RATE_LIMIT_PER_SEC`   | `1`     | yes      | Throttler per-chat ceiling.                              |
+| `TELEGRAM_PER_GROUP_RATE_LIMIT_PER_MIN`  | `20`    | yes      | Throttler per-group ceiling.                             |
+| `TELEGRAM_MEDIA_GROUP_MAX_ITEMS`         | `10`    | yes      | Cap on media-group items; bounded `2..10`.               |
+| `TELEGRAM_MESSAGE_MAX_LENGTH`            | `4096`  | yes      | Cap on outbound text length; bounded `1..4096`.          |
+| `TELEGRAM_INLINE_KEYBOARD_MAX_BUTTONS`   | `100`   | yes      | Cap on inline keyboard buttons.                          |
+| `TELEGRAM_INLINE_KEYBOARD_MAX_ROW_WIDTH` | `8`     | yes      | Cap on buttons per row.                                  |
+| `TELEGRAM_CALLBACK_DATA_MAX_BYTES`       | `64`    | yes      | Cap on callback-data payload size.                       |
+| `TELEGRAM_LONG_POLL_TIMEOUT_SECONDS`     | `50`    | yes      | Long-poll timeout; bounded `1..50`.                      |
+| `TELEGRAM_AUTORETRY_MAX_ATTEMPTS`        | `5`     | yes      | `@grammyjs/auto-retry` attempts on 429; bounded `0..10`. |
+| `TELEGRAM_AUTORETRY_MAX_DELAY_SECONDS`   | `60`    | yes      | Cap on the auto-retry sleep window; bounded `0..600`.    |
 
 ### Concurrency
 
-| Name | Default | Required | Description |
-| --- | --- | --- | --- |
-| `RUNNER_CONCURRENCY` | `200` | yes | Max in-flight handlers in the grammY runner. Per-user updates serialize regardless of this ceiling. |
-| `CHILD_BOT_MAX_PARALLEL_STARTS` | `16` | yes | Fan-out cap when warming child bots on boot. |
-| `BROADCAST_DELAY_MS` | `50` | yes | Pacing delay between admin-broadcast messages; bounded `0..10000`. |
+| Name                            | Default | Required | Description                                                                                         |
+| ------------------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `RUNNER_CONCURRENCY`            | `200`   | yes      | Max in-flight handlers in the grammY runner. Per-user updates serialize regardless of this ceiling. |
+| `CHILD_BOT_MAX_PARALLEL_STARTS` | `16`    | yes      | Fan-out cap when warming child bots on boot.                                                        |
+| `BROADCAST_DELAY_MS`            | `50`    | yes      | Pacing delay between admin-broadcast messages; bounded `0..10000`.                                  |
 
 ## Commands
 

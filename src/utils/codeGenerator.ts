@@ -22,9 +22,7 @@ const MAX_LENGTH = 64;
  */
 export function generateCode(length: number): string {
   if (!Number.isInteger(length) || length < MIN_LENGTH || length > MAX_LENGTH) {
-    throw new RangeError(
-      `generateCode length must be ${MIN_LENGTH}–${MAX_LENGTH}, got ${length}`,
-    );
+    throw new RangeError(`generateCode length must be ${MIN_LENGTH}–${MAX_LENGTH}, got ${length}`);
   }
   const out = new Array<string>(length);
   for (let i = 0; i < length; i++) {

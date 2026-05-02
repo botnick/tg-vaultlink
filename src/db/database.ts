@@ -56,11 +56,10 @@ export function openDatabase(dbPath: string): DB {
     try {
       fs.mkdirSync(parentDir, { recursive: true });
     } catch (cause) {
-      throw new AppError(
-        ErrorCode.DB_OPEN_FAILED,
-        'unable to open database',
-        { cause, meta: { path: absolutePath, stage: 'mkdir' } },
-      );
+      throw new AppError(ErrorCode.DB_OPEN_FAILED, 'unable to open database', {
+        cause,
+        meta: { path: absolutePath, stage: 'mkdir' },
+      });
     }
   }
 
@@ -68,11 +67,10 @@ export function openDatabase(dbPath: string): DB {
   try {
     db = new Database(absolutePath, { fileMustExist: false });
   } catch (cause) {
-    throw new AppError(
-      ErrorCode.DB_OPEN_FAILED,
-      'unable to open database',
-      { cause, meta: { path: absolutePath } },
-    );
+    throw new AppError(ErrorCode.DB_OPEN_FAILED, 'unable to open database', {
+      cause,
+      meta: { path: absolutePath },
+    });
   }
 
   try {
@@ -87,11 +85,10 @@ export function openDatabase(dbPath: string): DB {
       // Closing a freshly-opened handle should not fail; ignore so the
       // original pragma error is the one surfaced to the caller.
     }
-    throw new AppError(
-      ErrorCode.DB_OPEN_FAILED,
-      'unable to open database',
-      { cause, meta: { path: absolutePath, stage: 'pragma' } },
-    );
+    throw new AppError(ErrorCode.DB_OPEN_FAILED, 'unable to open database', {
+      cause,
+      meta: { path: absolutePath, stage: 'pragma' },
+    });
   }
 
   return db;
@@ -109,9 +106,10 @@ export function getDatabase(): DB {
   if (cached) return cached;
 
   const config = getConfig();
-  const absolutePath = config.DATABASE_PATH === ':memory:'
-    ? ':memory:'
-    : path.resolve(process.cwd(), config.DATABASE_PATH);
+  const absolutePath =
+    config.DATABASE_PATH === ':memory:'
+      ? ':memory:'
+      : path.resolve(process.cwd(), config.DATABASE_PATH);
 
   try {
     cached = openDatabase(config.DATABASE_PATH);

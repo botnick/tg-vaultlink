@@ -120,7 +120,10 @@ export function createBot(opts: CreateBotOptions): Bot<AppContext> {
   registerSettingsRouter(composer);
   registerUploadRouter(composer);
   registerFilesRouter(composer);
-  registerBotManagementRouter(composer, opts.childManager !== undefined ? { childManager: opts.childManager } : {});
+  registerBotManagementRouter(
+    composer,
+    opts.childManager !== undefined ? { childManager: opts.childManager } : {},
+  );
   registerPermissionsRouter(composer);
   registerReportsRouter(composer);
   registerAdminRouter(composer);

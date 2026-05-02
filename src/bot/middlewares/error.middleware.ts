@@ -22,11 +22,7 @@ import { formatBytes } from '../../utils/formatBytes.js';
  * has no specific user-facing translation; the caller falls back to
  * `common.error.internal`.
  */
-function localizedMessageFor(
-  err: AppError,
-  locale: Locale,
-  config: Config,
-): string | null {
+function localizedMessageFor(err: AppError, locale: Locale, config: Config): string | null {
   const tr = (key: string, params?: Record<string, string | number>): string =>
     translate(locale, key, params);
 
@@ -104,9 +100,7 @@ export function installErrorHandler(bot: Bot<AppContext>, config: Config): void 
       );
       const msg =
         localizedMessageFor(cause, locale, config) ?? translate(locale, 'common.error.internal');
-      void ctx
-        ?.reply(msg, { parse_mode: 'HTML' })
-        .catch(() => undefined);
+      void ctx?.reply(msg, { parse_mode: 'HTML' }).catch(() => undefined);
       return;
     }
 

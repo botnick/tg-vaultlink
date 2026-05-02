@@ -71,9 +71,7 @@ export function botsRoutes(deps: BotsRouteDeps): Hono<MiniAppEnv> {
     if (!Number.isFinite(id)) {
       throw new AppError(ErrorCode.INVALID_INPUT, 'invalid bot id', { expose: true });
     }
-    const body = await c.req
-      .json<{ mode?: unknown }>()
-      .catch(() => ({}) as { mode?: unknown });
+    const body = await c.req.json<{ mode?: unknown }>().catch(() => ({}) as { mode?: unknown });
     const mode = body.mode;
     if (mode !== 'personal_public' && mode !== 'personal_private') {
       throw new AppError(

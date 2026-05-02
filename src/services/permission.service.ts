@@ -14,12 +14,7 @@
  */
 
 import type { Config } from '../config/env.js';
-import type {
-  ManagedBotRow,
-  UserRow,
-  FileRow,
-  BotPermissionType,
-} from '../types/index.js';
+import type { ManagedBotRow, UserRow, FileRow, BotPermissionType } from '../types/index.js';
 import type { PermissionRepository } from '../repositories/permission.repository.js';
 import type { UserService } from './user.service.js';
 

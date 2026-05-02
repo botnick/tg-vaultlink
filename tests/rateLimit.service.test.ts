@@ -11,10 +11,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { Config } from '../src/config/env.js';
 import type { RateLimitRow } from '../src/types/index.js';
 import { RATE_LIMIT_WINDOWS } from '../src/config/constants.js';
-import {
-  RateLimitService,
-  type IRateLimitRepository,
-} from '../src/services/rateLimit.service.js';
+import { RateLimitService, type IRateLimitRepository } from '../src/services/rateLimit.service.js';
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -94,33 +91,31 @@ function makeFakeRepo(): IRateLimitRepository & {
   hit: ReturnType<typeof vi.fn>;
 } {
   const state = new Map<string, FakeState>();
-  const hit = vi.fn(
-    (scope: string, key: string, windowMs: number, now?: Date) => {
-      const composite = `${scope}|${key}`;
-      const ts = now ?? new Date();
-      const prev = state.get(composite);
-      let newWindow = false;
-      let nextCount: number;
-      let nextStart: Date;
-      if (!prev || ts.getTime() >= prev.windowStart.getTime() + windowMs) {
-        nextCount = 1;
-        nextStart = ts;
-        newWindow = true;
-      } else {
-        nextCount = prev.count + 1;
-        nextStart = prev.windowStart;
-      }
-      state.set(composite, { count: nextCount, windowStart: nextStart });
-      const row: RateLimitRow = {
-        id: 1,
-        scope,
-        key,
-        count: nextCount,
-        window_start: nextStart.toISOString(),
-      };
-      return { row, newWindow };
-    },
-  );
+  const hit = vi.fn((scope: string, key: string, windowMs: number, now?: Date) => {
+    const composite = `${scope}|${key}`;
+    const ts = now ?? new Date();
+    const prev = state.get(composite);
+    let newWindow = false;
+    let nextCount: number;
+    let nextStart: Date;
+    if (!prev || ts.getTime() >= prev.windowStart.getTime() + windowMs) {
+      nextCount = 1;
+      nextStart = ts;
+      newWindow = true;
+    } else {
+      nextCount = prev.count + 1;
+      nextStart = prev.windowStart;
+    }
+    state.set(composite, { count: nextCount, windowStart: nextStart });
+    const row: RateLimitRow = {
+      id: 1,
+      scope,
+      key,
+      count: nextCount,
+      window_start: nextStart.toISOString(),
+    };
+    return { row, newWindow };
+  });
   const reset = vi.fn((scope: string, key: string) => {
     state.delete(`${scope}|${key}`);
   });

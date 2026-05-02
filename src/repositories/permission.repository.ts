@@ -28,15 +28,11 @@ export class PermissionRepository {
     this.revokeStmt = db.prepare(
       'DELETE FROM bot_permissions WHERE bot_id = ? AND user_id = ? AND permission_type = ?',
     );
-    this.listStmt = db.prepare(
-      'SELECT * FROM bot_permissions WHERE bot_id = ? ORDER BY id ASC',
-    );
+    this.listStmt = db.prepare('SELECT * FROM bot_permissions WHERE bot_id = ? ORDER BY id ASC');
     this.hasStmt = db.prepare(
       'SELECT 1 FROM bot_permissions WHERE bot_id = ? AND user_id = ? AND permission_type = ? LIMIT 1',
     );
-    this.countStmt = db.prepare(
-      'SELECT COUNT(*) AS n FROM bot_permissions WHERE bot_id = ?',
-    );
+    this.countStmt = db.prepare('SELECT COUNT(*) AS n FROM bot_permissions WHERE bot_id = ?');
   }
 
   grant(botId: number, userId: number, permissionType: BotPermissionType): void {

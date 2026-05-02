@@ -30,9 +30,7 @@ export class AuditRepository {
        RETURNING *`,
     );
 
-    this.listAllStmt = db.prepare(
-      'SELECT * FROM audit_logs ORDER BY id DESC LIMIT ? OFFSET ?',
-    );
+    this.listAllStmt = db.prepare('SELECT * FROM audit_logs ORDER BY id DESC LIMIT ? OFFSET ?');
     this.listByActorStmt = db.prepare(
       'SELECT * FROM audit_logs WHERE actor_user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?',
     );

@@ -4,11 +4,11 @@ VaultLink Bot stores access tokens and user-uploaded media on behalf of operator
 
 ## Supported versions
 
-| Version | Status |
-| --- | --- |
-| Latest minor on `main` | Supported. Receives security and bug fixes. |
-| Previous minor | Critical fixes only, until the next minor lands. |
-| Older minors | End of life. Please upgrade. |
+| Version                | Status                                           |
+| ---------------------- | ------------------------------------------------ |
+| Latest minor on `main` | Supported. Receives security and bug fixes.      |
+| Previous minor         | Critical fixes only, until the next minor lands. |
+| Older minors           | End of life. Please upgrade.                     |
 
 The project follows [Semantic Versioning](https://semver.org/). A "minor" here means the `0.X` segment until the project reaches `1.0`, and the `X.Y` segment thereafter.
 
@@ -66,10 +66,10 @@ Report submission itself is rate-limited per user via `REPORT_LIMIT_PER_HOUR` to
 
 ## Cryptography
 
-| Use | Algorithm | Notes |
-| --- | --- | --- |
-| Bot tokens at rest | **AES-256-GCM** | 32-byte key from `TOKEN_ENCRYPTION_KEY`. Random 12-byte nonce per record. Auth tag stored alongside ciphertext. |
-| File passwords | **argon2id** | Library defaults via `argon2`. Salt and parameters are encoded into the stored hash. |
-| Mini App initData | **HMAC-SHA256** | `secret_key = HMAC-SHA256("WebAppData", BOT_TOKEN)`; signature = `HMAC-SHA256(secret_key, data_check_string)`. Constant-time compare; `auth_date` freshness window from env. |
+| Use                | Algorithm       | Notes                                                                                                                                                                        |
+| ------------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bot tokens at rest | **AES-256-GCM** | 32-byte key from `TOKEN_ENCRYPTION_KEY`. Random 12-byte nonce per record. Auth tag stored alongside ciphertext.                                                              |
+| File passwords     | **argon2id**    | Library defaults via `argon2`. Salt and parameters are encoded into the stored hash.                                                                                         |
+| Mini App initData  | **HMAC-SHA256** | `secret_key = HMAC-SHA256("WebAppData", BOT_TOKEN)`; signature = `HMAC-SHA256(secret_key, data_check_string)`. Constant-time compare; `auth_date` freshness window from env. |
 
 If you spot a deviation from any of the above in the codebase, please report it as a vulnerability — that itself is a bug we want to fix.

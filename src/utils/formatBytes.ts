@@ -41,7 +41,6 @@ export function formatBytes(
   }
 
   const unit = UNITS[unitIndex] as string;
-  const formatted =
-    unitIndex === 0 ? String(Math.round(value)) : value.toFixed(precision);
+  const formatted = unitIndex === 0 ? String(Math.round(value)) : value.toFixed(precision);
   return `${negative ? '-' : ''}${formatted} ${unit}`;
 }

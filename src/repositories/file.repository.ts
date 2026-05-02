@@ -79,16 +79,12 @@ export class FileRepository {
       'UPDATE files SET download_count = download_count + 1, updated_at = @now WHERE id = @id',
     );
 
-    this.countByOwnerStmt = db.prepare(
-      'SELECT COUNT(*) AS n FROM files WHERE owner_user_id = ?',
-    );
+    this.countByOwnerStmt = db.prepare('SELECT COUNT(*) AS n FROM files WHERE owner_user_id = ?');
     this.countAllStmt = db.prepare('SELECT COUNT(*) AS n FROM files');
     this.countActiveStmt = db.prepare(
       'SELECT COUNT(*) AS n FROM files WHERE is_deleted = 0 AND is_locked = 0',
     );
-    this.totalDownloadsStmt = db.prepare(
-      'SELECT COALESCE(SUM(download_count), 0) AS n FROM files',
-    );
+    this.totalDownloadsStmt = db.prepare('SELECT COALESCE(SUM(download_count), 0) AS n FROM files');
 
     this.insertAccessLogStmt = db.prepare(
       `INSERT INTO file_access_logs (file_id, requester_user_id, action, created_at)

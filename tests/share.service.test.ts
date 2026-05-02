@@ -133,10 +133,7 @@ describe('share.service — draft lifecycle', () => {
 
   it('cannot finish an empty draft', async () => {
     const draft = share.createCollectionDraft(owner, bot);
-    await expectAppError(
-      () => share.finishCollection(draft, owner),
-      ErrorCode.INVALID_INPUT,
-    );
+    await expectAppError(() => share.finishCollection(draft, owner), ErrorCode.INVALID_INPUT);
   });
 
   it('cancelDraft removes the row and clears items so a second create works', () => {
@@ -239,7 +236,10 @@ describe('share.service — access gates', () => {
     const fin = await share.finishCollection(draft, owner, { password: 'hunter22' });
     const c = fin.collection;
     expect(c.password_hash).not.toBeNull();
-    await expectAppError(() => share.ensureAccessible({ collection: c }), ErrorCode.PASSWORD_REQUIRED);
+    await expectAppError(
+      () => share.ensureAccessible({ collection: c }),
+      ErrorCode.PASSWORD_REQUIRED,
+    );
     await expectAppError(
       () => share.ensureAccessible({ collection: c, password: 'wrong' }),
       ErrorCode.PASSWORD_INCORRECT,

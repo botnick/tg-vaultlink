@@ -64,7 +64,7 @@ export class CollectionDraftRepository {
     this.deleteStmt = db.prepare('DELETE FROM collection_drafts WHERE id = ?');
     this.findByIdStmt = db.prepare('SELECT * FROM collection_drafts WHERE id = ?');
     this.cleanupExpiredStmt = db.prepare(
-      "DELETE FROM collection_drafts WHERE expires_at IS NOT NULL AND expires_at < ?",
+      'DELETE FROM collection_drafts WHERE expires_at IS NOT NULL AND expires_at < ?',
     );
 
     this.insertItemStmt = db.prepare(

@@ -9,11 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  loadConfig,
-  resetConfigForTests,
-  type Config,
-} from '../src/config/env.js';
+import { loadConfig, resetConfigForTests, type Config } from '../src/config/env.js';
 import { AppError, ErrorCode } from '../src/utils/errors.js';
 
 function validEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {

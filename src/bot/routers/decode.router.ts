@@ -131,11 +131,7 @@ export function registerDecodeRouter(composer: Composer<AppContext>): void {
       });
 
       // Permission check at the bot-mode level (download policy).
-      const decision = ctx.services.permission.canDownload(
-        ctx.user,
-        decoded.bot,
-        decoded.file,
-      );
+      const decision = ctx.services.permission.canDownload(ctx.user, decoded.bot, decoded.file);
       if (!decision.allowed) {
         await ctx.reply(ctx.t('decode.permission_denied'));
         return;

@@ -100,11 +100,10 @@ export function loadMigrationFiles(): MigrationFile[] {
     try {
       sql = fs.readFileSync(absPath, 'utf8');
     } catch (cause) {
-      throw new AppError(
-        ErrorCode.DB_MIGRATION_FAILED,
-        `failed to read migration ${name}`,
-        { cause, meta: { name, absPath } },
-      );
+      throw new AppError(ErrorCode.DB_MIGRATION_FAILED, `failed to read migration ${name}`, {
+        cause,
+        meta: { name, absPath },
+      });
     }
     return { version: versionFromName(name), name, sql, absPath };
   });
@@ -209,9 +208,7 @@ function performReset(db: DB): void {
  *   `schema_migrations`, clear the bookkeeping table, and re-apply every
  *   migration from scratch. Always followed by a normal apply pass.
  */
-export async function runMigrations(
-  opts: { reset?: boolean } = {},
-): Promise<MigrationResult> {
+export async function runMigrations(opts: { reset?: boolean } = {}): Promise<MigrationResult> {
   const log = getLogger();
   const db = getDatabase();
   const files = loadMigrationFiles();
@@ -223,11 +220,7 @@ export async function runMigrations(
     try {
       performReset(db);
     } catch (cause) {
-      throw new AppError(
-        ErrorCode.DB_MIGRATION_FAILED,
-        'failed to reset database',
-        { cause },
-      );
+      throw new AppError(ErrorCode.DB_MIGRATION_FAILED, 'failed to reset database', { cause });
     }
   }
 

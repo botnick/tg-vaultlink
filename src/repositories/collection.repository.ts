@@ -9,12 +9,7 @@
  */
 
 import type { Db } from '../db/database.js';
-import type {
-  CollectionRow,
-  CollectionItemRow,
-  FileType,
-  FileVisibility,
-} from '../types/index.js';
+import type { CollectionRow, CollectionItemRow, FileType, FileVisibility } from '../types/index.js';
 import { FILE_TYPES } from '../types/index.js';
 
 const nowIso = (): string => new Date().toISOString();
@@ -65,9 +60,7 @@ export class CollectionRepository {
        RETURNING *`,
     );
     this.findByIdStmt = db.prepare('SELECT * FROM collections WHERE id = ?');
-    this.findByCodeStmt = db.prepare(
-      'SELECT * FROM collections WHERE bot_id = ? AND code = ?',
-    );
+    this.findByCodeStmt = db.prepare('SELECT * FROM collections WHERE bot_id = ? AND code = ?');
     this.findByCodeAcrossBotsStmt = db.prepare(
       'SELECT * FROM collections WHERE code = ? ORDER BY id ASC LIMIT 1',
     );
@@ -211,11 +204,7 @@ export class CollectionRepository {
    * List ALL collections in the database (admin tooling). Optionally filter
    * by owner. Soft-deleted rows are included so admins can audit deletions.
    */
-  listAll(opts?: {
-    limit?: number;
-    offset?: number;
-    ownerUserId?: number;
-  }): CollectionRow[] {
+  listAll(opts?: { limit?: number; offset?: number; ownerUserId?: number }): CollectionRow[] {
     const limit = opts?.limit ?? 20;
     const offset = opts?.offset ?? 0;
     if (opts?.ownerUserId !== undefined) {
@@ -277,14 +266,8 @@ export class CollectionRepository {
     // would clobber the existing column — so we substitute `null` to mean
     // "no change" and accept explicit `null`s only when the caller wants to
     // wipe a column.
-    const titleValue =
-      fields.title === undefined
-        ? null
-        : fields.title;
-    const descValue =
-      fields.description === undefined
-        ? null
-        : fields.description;
+    const titleValue = fields.title === undefined ? null : fields.title;
+    const descValue = fields.description === undefined ? null : fields.description;
     return this.setMetadataStmt.get({
       id,
       title: titleValue,
@@ -338,10 +321,7 @@ export class CollectionRepository {
     return this.insertItemStmt.get({ ...input, now: nowIso() }) as unknown as CollectionItemRow;
   }
 
-  listItems(
-    collectionId: number,
-    opts?: { limit?: number; offset?: number },
-  ): CollectionItemRow[] {
+  listItems(collectionId: number, opts?: { limit?: number; offset?: number }): CollectionItemRow[] {
     if (opts?.limit !== undefined) {
       const offset = opts.offset ?? 0;
       return this.listItemsPagedStmt.all(

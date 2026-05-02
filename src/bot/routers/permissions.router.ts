@@ -53,7 +53,11 @@ export function registerPermissionsRouter(composer: Composer<AppContext>): void 
     if (perm === 'allow' || perm === 'allow_upload') {
       ctx.repos.permissions.grant(ctx.bot.id, target.id, perm);
     } else {
-      ctx.repos.permissions.revoke(ctx.bot.id, target.id, perm === 'deny' ? 'allow' : 'allow_upload');
+      ctx.repos.permissions.revoke(
+        ctx.bot.id,
+        target.id,
+        perm === 'deny' ? 'allow' : 'allow_upload',
+      );
       ctx.repos.permissions.grant(ctx.bot.id, target.id, perm);
     }
     ctx.services.audit.log(`bot.permission.${perm}`, {
@@ -108,19 +112,17 @@ export function registerPermissionsRouter(composer: Composer<AppContext>): void 
   composer.command('mode_public', async (ctx) => {
     if (!ensureOwnerOnPersonalBot(ctx)) return;
     ctx.services.bot.setMode(ctx.bot, 'personal_public', ctx.user);
-    await ctx.reply(
-      ctx.t('permission.mode_changed', { mode: ctx.t('permission.mode_public') }),
-      { parse_mode: 'HTML' },
-    );
+    await ctx.reply(ctx.t('permission.mode_changed', { mode: ctx.t('permission.mode_public') }), {
+      parse_mode: 'HTML',
+    });
   });
 
   composer.command('mode_private', async (ctx) => {
     if (!ensureOwnerOnPersonalBot(ctx)) return;
     ctx.services.bot.setMode(ctx.bot, 'personal_private', ctx.user);
-    await ctx.reply(
-      ctx.t('permission.mode_changed', { mode: ctx.t('permission.mode_private') }),
-      { parse_mode: 'HTML' },
-    );
+    await ctx.reply(ctx.t('permission.mode_changed', { mode: ctx.t('permission.mode_private') }), {
+      parse_mode: 'HTML',
+    });
   });
 
   composer.command('stats', async (ctx) => {
@@ -128,5 +130,4 @@ export function registerPermissionsRouter(composer: Composer<AppContext>): void 
     const count = ctx.repos.permissions.count(ctx.bot.id);
     await ctx.reply(ctx.t('permission.stats', { count }), { parse_mode: 'HTML' });
   });
-
 }

@@ -62,10 +62,7 @@ describe('verifyInitData', () => {
   it('rejects a tampered hash with bad_signature', () => {
     const authDate = 1_700_000_000;
     const userJson = JSON.stringify({ id: 7, first_name: 'Eve' });
-    const initData = buildInitData(
-      { auth_date: String(authDate), user: userJson },
-      TOKEN,
-    );
+    const initData = buildInitData({ auth_date: String(authDate), user: userJson }, TOKEN);
     // Flip a single hex char in the trailing hash.
     const flipped = initData.replace(/hash=([0-9a-f]+)/i, (_m, h: string) => {
       const last = h[h.length - 1] ?? '0';
@@ -80,10 +77,7 @@ describe('verifyInitData', () => {
   it('rejects expired initData with reason=expired', () => {
     const authDate = 1_700_000_000;
     const userJson = JSON.stringify({ id: 9, first_name: 'Old' });
-    const initData = buildInitData(
-      { auth_date: String(authDate), user: userJson },
-      TOKEN,
-    );
+    const initData = buildInitData({ auth_date: String(authDate), user: userJson }, TOKEN);
     // Two days after auth_date with a one-day max age → expired.
     const result = verifyInitData(initData, TOKEN, MAX_AGE, fixedNow(authDate, 2 * MAX_AGE));
     expect(result.ok).toBe(false);
@@ -126,10 +120,7 @@ describe('verifyInitData', () => {
   it('rejects a hash whose length is wrong (treated as bad_signature)', () => {
     const authDate = 1_700_000_000;
     const userJson = JSON.stringify({ id: 1, first_name: 'Trunc' });
-    const initData = buildInitData(
-      { auth_date: String(authDate), user: userJson },
-      TOKEN,
-    );
+    const initData = buildInitData({ auth_date: String(authDate), user: userJson }, TOKEN);
     // Truncate the hash so the buffer length no longer matches.
     const truncated = initData.replace(/hash=([0-9a-f]+)/i, 'hash=deadbeef');
     const result = verifyInitData(truncated, TOKEN, MAX_AGE, fixedNow(authDate));
@@ -139,10 +130,7 @@ describe('verifyInitData', () => {
 
   it('rejects a non-JSON user field with reason=missing_user', () => {
     const authDate = 1_700_000_000;
-    const initData = buildInitData(
-      { auth_date: String(authDate), user: 'not-json' },
-      TOKEN,
-    );
+    const initData = buildInitData({ auth_date: String(authDate), user: 'not-json' }, TOKEN);
     const result = verifyInitData(initData, TOKEN, MAX_AGE, fixedNow(authDate));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('missing_user');

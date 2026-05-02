@@ -27,12 +27,12 @@ pnpm preview
 
 ## Environment
 
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `VITE_API_BASE_URL` | Hono backend base URL | `http://localhost:8081/api/v1` |
-| `VITE_BOT_USERNAME` | Telegram bot username (no `@`) | — |
-| `VITE_FONT_PROVIDER_URL` | Font CSS provider | `https://fonts.googleapis.com` |
-| `VITE_APP_VERSION` | Shown on Settings → About | `dev` |
+| Variable                 | Purpose                        | Default                        |
+| ------------------------ | ------------------------------ | ------------------------------ |
+| `VITE_API_BASE_URL`      | Hono backend base URL          | `http://localhost:8081/api/v1` |
+| `VITE_BOT_USERNAME`      | Telegram bot username (no `@`) | —                              |
+| `VITE_FONT_PROVIDER_URL` | Font CSS provider              | `https://fonts.googleapis.com` |
+| `VITE_APP_VERSION`       | Shown on Settings → About      | `dev`                          |
 
 ## Telegram-only
 

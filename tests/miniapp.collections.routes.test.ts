@@ -27,11 +27,7 @@ import type { AppRepos, AppServices } from '../src/miniapp/types.js';
 import { buildTestEnv, seedBot, seedUser, type TestEnv } from './helpers/testDb.js';
 
 import type { Config } from '../src/config/env.js';
-import type {
-  CollectionRow,
-  ManagedBotRow,
-  UserRow,
-} from '../src/types/index.js';
+import type { CollectionRow, ManagedBotRow, UserRow } from '../src/types/index.js';
 
 const TOKEN = '123456:AAAA-test-token-AAAA-test-token-AAAA';
 

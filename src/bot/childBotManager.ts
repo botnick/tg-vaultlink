@@ -86,9 +86,7 @@ export class ChildBotManager {
     // what lets a single process safely service thousands of concurrent users.
     grammyBot.use(sequentialize((ctx) => ctx.from?.id?.toString()));
 
-    const allowedUpdates = [
-      ...this.deps.config.BOT_POLLING_ALLOWED_UPDATES,
-    ] as AllowedUpdate[];
+    const allowedUpdates = [...this.deps.config.BOT_POLLING_ALLOWED_UPDATES] as AllowedUpdate[];
 
     let handle: RunnerHandle;
     try {

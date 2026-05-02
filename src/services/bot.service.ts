@@ -17,11 +17,7 @@ import type { ManagedBotRow, UserRow, BotMode } from '../types/index.js';
 import type { BotRepository } from '../repositories/bot.repository.js';
 import type { AuditService } from './audit.service.js';
 import { AppError, ErrorCode } from '../utils/errors.js';
-import {
-  isValidTelegramToken,
-  parseTelegramBotId,
-  maskToken,
-} from '../utils/telegramToken.js';
+import { isValidTelegramToken, parseTelegramBotId, maskToken } from '../utils/telegramToken.js';
 import { encryptToken, decryptToken } from './tokenCrypto.service.js';
 import { TELEGRAM_BOT_USERNAME_REGEX } from '../config/constants.js';
 
@@ -57,12 +53,7 @@ export class BotService {
   private readonly config: Config;
   private readonly getMe: GetMeFn;
 
-  constructor(
-    bots: BotRepository,
-    audit: AuditService,
-    config: Config,
-    getMeFn: GetMeFn,
-  ) {
+  constructor(bots: BotRepository, audit: AuditService, config: Config, getMeFn: GetMeFn) {
     this.bots = bots;
     this.audit = audit;
     this.config = config;
@@ -91,41 +82,34 @@ export class BotService {
 
     const existing = this.bots.findByTelegramBotId(telegramBotId);
     if (existing) {
-      throw new AppError(
-        ErrorCode.BOT_ALREADY_EXISTS,
-        'this bot is already registered',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.BOT_ALREADY_EXISTS, 'this bot is already registered', {
+        expose: true,
+      });
     }
 
     let info: BotInfo;
     try {
       info = await this.getMe(token, this.config.TELEGRAM_API_BASE_URL);
     } catch (cause) {
-      throw new AppError(
-        ErrorCode.BOT_TOKEN_INVALID,
-        'invalid telegram bot token',
-        { expose: true, cause },
-      );
+      throw new AppError(ErrorCode.BOT_TOKEN_INVALID, 'invalid telegram bot token', {
+        expose: true,
+        cause,
+      });
     }
 
     const username = (info.username ?? '').replace(/^@/, '');
     if (!TELEGRAM_BOT_USERNAME_REGEX.test(username)) {
-      throw new AppError(
-        ErrorCode.BOT_TOKEN_INVALID,
-        'bot username must end with "bot"',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.BOT_TOKEN_INVALID, 'bot username must end with "bot"', {
+        expose: true,
+      });
     }
     const usernameLower = username.toLowerCase();
 
     const byUsername = this.bots.findByUsername(usernameLower);
     if (byUsername) {
-      throw new AppError(
-        ErrorCode.BOT_ALREADY_EXISTS,
-        'this bot is already registered',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.BOT_ALREADY_EXISTS, 'this bot is already registered', {
+        expose: true,
+      });
     }
 
     const encrypted = encryptToken(token, this.config.TOKEN_ENCRYPTION_KEY);

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-05-02
 
 ### Added
+
 - Initial public release of VaultLink Bot.
 - Telegram file uploads with share codes and deep links.
 - Multi-bot support: add personal public or private bots via `/add_bot` and `/add_bot_open`.

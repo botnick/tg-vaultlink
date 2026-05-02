@@ -70,7 +70,10 @@ afterEach(() => {
 });
 
 /** Resolve the AppError that `op` is expected to throw. */
-async function expectAppError(op: () => Promise<unknown> | unknown, code: ErrorCode): Promise<AppError> {
+async function expectAppError(
+  op: () => Promise<unknown> | unknown,
+  code: ErrorCode,
+): Promise<AppError> {
   try {
     await op();
   } catch (err) {

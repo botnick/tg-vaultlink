@@ -119,7 +119,9 @@ export function filesRoutes(deps: FilesRouteDeps): Hono<MiniAppEnv> {
     if (!Number.isFinite(id)) {
       throw new AppError(ErrorCode.INVALID_INPUT, 'invalid file id', { expose: true });
     }
-    const body = await c.req.json<{ password?: unknown }>().catch(() => ({}) as { password?: unknown });
+    const body = await c.req
+      .json<{ password?: unknown }>()
+      .catch(() => ({}) as { password?: unknown });
     if (typeof body.password !== 'string' || body.password.length === 0) {
       throw new AppError(ErrorCode.INVALID_INPUT, 'password is required', { expose: true });
     }
@@ -163,10 +165,17 @@ export function filesRoutes(deps: FilesRouteDeps): Hono<MiniAppEnv> {
     let days: number | null;
     if (body.days === null || body.days === undefined) {
       days = null;
-    } else if (typeof body.days === 'number' && Number.isFinite(body.days) && Number.isInteger(body.days) && body.days >= 0) {
+    } else if (
+      typeof body.days === 'number' &&
+      Number.isFinite(body.days) &&
+      Number.isInteger(body.days) &&
+      body.days >= 0
+    ) {
       days = body.days;
     } else {
-      throw new AppError(ErrorCode.INVALID_INPUT, 'days must be a non-negative integer or null', { expose: true });
+      throw new AppError(ErrorCode.INVALID_INPUT, 'days must be a non-negative integer or null', {
+        expose: true,
+      });
     }
     const file = repos.files.findById(id);
     if (!file) {

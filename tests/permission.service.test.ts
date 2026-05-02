@@ -115,7 +115,7 @@ describe('permission.service — personal_public mode', () => {
     expect(perms.canUpload(owner, bot).allowed).toBe(true);
   });
 
-  it("non-owner without allow_upload is mode_restricted on upload", () => {
+  it('non-owner without allow_upload is mode_restricted on upload', () => {
     const owner = seedUser(env.repos, '410');
     const stranger = seedUser(env.repos, '411');
     const bot = seedBot(env.repos, owner.id, 'personal_public');

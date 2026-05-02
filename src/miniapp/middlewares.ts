@@ -117,9 +117,7 @@ export function authMiddleware(deps: {
  * Gate downstream handlers behind admin role. Re-checks `c.var.isAdmin`
  * even though `authMiddleware` already populated it — defense in depth.
  */
-export function adminMiddleware(_deps: {
-  services: AppServices;
-}): MiddlewareHandler<MiniAppEnv> {
+export function adminMiddleware(_deps: { services: AppServices }): MiddlewareHandler<MiniAppEnv> {
   return async (c, next) => {
     if (c.var.isAdmin !== true) {
       return jsonError(c, 403, 'forbidden', 'admin access required');

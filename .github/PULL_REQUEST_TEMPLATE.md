@@ -1,6 +1,7 @@
 ## Summary
 
 ## Type of change
+
 - [ ] Bug fix
 - [ ] Feature
 - [ ] Refactor
@@ -8,6 +9,7 @@
 - [ ] CI / build
 
 ## Update discipline checklist
+
 - [ ] `package.json` version bumped (if release-worthy)
 - [ ] `CHANGELOG.md` entry added under `[Unreleased]`
 - [ ] `README.md` updated if commands, env vars, or features changed
@@ -18,10 +20,12 @@
 - [ ] No hardcoded values introduced (limits / URLs / locale text / feature flags trace back to env, settings table, or locales)
 
 ## Test plan
+
 - [ ] `pnpm typecheck` passes
 - [ ] `pnpm lint` passes
 - [ ] `pnpm test` passes
 - [ ] Manual smoke test (describe steps below)
 
 ```
+
 ```

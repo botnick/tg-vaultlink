@@ -11,10 +11,7 @@ import type { AppContext } from '../context.js';
 
 export function registerHelpRouter(composer: Composer<AppContext>): void {
   composer.command('help', async (ctx) => {
-    const body = [
-      ctx.t('help.intro'),
-      ctx.t('help.commands_list'),
-    ].join('\n\n');
+    const body = [ctx.t('help.intro'), ctx.t('help.commands_list')].join('\n\n');
     await ctx.reply(body, { parse_mode: 'HTML' });
   });
 

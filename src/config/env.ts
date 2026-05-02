@@ -36,103 +36,78 @@ const ALLOWED_UPDATE_TYPES = new Set<string>([
 
 const trimmed = (s: unknown): string => (typeof s === 'string' ? s.trim() : String(s ?? '').trim());
 
-const boolFromString = z
-  .string()
-  .transform((raw, ctx) => {
-    const v = raw.trim().toLowerCase();
-    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
-    if (v === 'false' || v === '0' || v === 'no' || v === 'off') return false;
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be "true" or "false"' });
-    return z.NEVER;
-  });
+const boolFromString = z.string().transform((raw, ctx) => {
+  const v = raw.trim().toLowerCase();
+  if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
+  if (v === 'false' || v === '0' || v === 'no' || v === 'off') return false;
+  ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be "true" or "false"' });
+  return z.NEVER;
+});
 
 const intFromString = (opts: { min?: number; max?: number } = {}) =>
-  z
-    .string()
-    .transform((raw, ctx) => {
-      const v = raw.trim();
-      if (!/^-?\d+$/.test(v)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be an integer' });
-        return z.NEVER;
-      }
-      const n = Number.parseInt(v, 10);
-      if (!Number.isSafeInteger(n)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'integer out of safe range' });
-        return z.NEVER;
-      }
-      const min = opts.min ?? 0;
-      if (n < min) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `must be >= ${min}` });
-        return z.NEVER;
-      }
-      if (opts.max !== undefined && n > opts.max) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `must be <= ${opts.max}` });
-        return z.NEVER;
-      }
-      return n;
-    });
-
-const csvList = (opts: { lowercase?: boolean; minItems?: number } = {}) =>
-  z
-    .string()
-    .transform((raw, ctx) => {
-      const items = raw
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-        .map((s) => (opts.lowercase ? s.toLowerCase() : s));
-      const min = opts.minItems ?? 0;
-      if (items.length < min) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `must contain at least ${min} item(s)` });
-        return z.NEVER;
-      }
-      return items;
-    });
-
-const httpUrlNoTrailingSlash = z
-  .string()
-  .transform((raw, ctx) => {
+  z.string().transform((raw, ctx) => {
     const v = raw.trim();
-    let parsed: URL;
-    try {
-      parsed = new URL(v);
-    } catch {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be a valid URL' });
+    if (!/^-?\d+$/.test(v)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be an integer' });
       return z.NEVER;
     }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must use http(s)' });
+    const n = Number.parseInt(v, 10);
+    if (!Number.isSafeInteger(n)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'integer out of safe range' });
       return z.NEVER;
     }
-    return v.replace(/\/+$/, '');
+    const min = opts.min ?? 0;
+    if (n < min) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `must be >= ${min}` });
+      return z.NEVER;
+    }
+    if (opts.max !== undefined && n > opts.max) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `must be <= ${opts.max}` });
+      return z.NEVER;
+    }
+    return n;
   });
 
+const httpUrlNoTrailingSlash = z.string().transform((raw, ctx) => {
+  const v = raw.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(v);
+  } catch {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be a valid URL' });
+    return z.NEVER;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must use http(s)' });
+    return z.NEVER;
+  }
+  return v.replace(/\/+$/, '');
+});
+
 const base64Buffer = (expectedBytes: number) =>
-  z
-    .string()
-    .transform((raw, ctx) => {
-      const v = raw.trim();
-      if (v.length === 0) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must not be empty' });
-        return z.NEVER;
-      }
-      // Accept standard and url-safe base64; pad if needed.
-      const normalized = v.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(padded)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be valid base64' });
-        return z.NEVER;
-      }
-      const buf = Buffer.from(padded, 'base64');
-      if (buf.length !== expectedBytes) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `must decode to exactly ${expectedBytes} bytes (got ${buf.length})`,
-        });
-        return z.NEVER;
-      }
-      return buf;
-    });
+  z.string().transform((raw, ctx) => {
+    const v = raw.trim();
+    if (v.length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must not be empty' });
+      return z.NEVER;
+    }
+    // Accept standard and url-safe base64; pad if needed.
+    const normalized = v.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(padded)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be valid base64' });
+      return z.NEVER;
+    }
+    const buf = Buffer.from(padded, 'base64');
+    if (buf.length !== expectedBytes) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `must decode to exactly ${expectedBytes} bytes (got ${buf.length})`,
+      });
+      return z.NEVER;
+    }
+    return buf;
+  });
 
 /* ------------------------------------------------------------------------- *
  * Schema
@@ -148,75 +123,73 @@ const nonEmpty = (label: string) =>
     return v;
   });
 
-const telegramToken = z
-  .string()
-  .transform((s, ctx) => {
-    const v = trimmed(s);
-    if (v.length === 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must not be empty' });
-      return z.NEVER;
-    }
-    if (!TELEGRAM_TOKEN_RE.test(v)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'malformed Telegram bot token' });
-      return z.NEVER;
-    }
-    return v;
-  });
+const telegramToken = z.string().transform((s, ctx) => {
+  const v = trimmed(s);
+  if (v.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must not be empty' });
+    return z.NEVER;
+  }
+  if (!TELEGRAM_TOKEN_RE.test(v)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'malformed Telegram bot token' });
+    return z.NEVER;
+  }
+  return v;
+});
 
-const adminIds = z
-  .string()
-  .transform((raw, ctx) => {
-    const items = raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    if (items.length === 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must contain at least one Telegram user ID' });
+const adminIds = z.string().transform((raw, ctx) => {
+  const items = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (items.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'must contain at least one Telegram user ID',
+    });
+    return z.NEVER;
+  }
+  for (const id of items) {
+    if (!TELEGRAM_USER_ID_RE.test(id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `"${id}" is not a numeric Telegram user ID`,
+      });
       return z.NEVER;
     }
-    for (const id of items) {
-      if (!TELEGRAM_USER_ID_RE.test(id)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `"${id}" is not a numeric Telegram user ID` });
-        return z.NEVER;
-      }
-    }
-    return items as readonly string[];
-  });
+  }
+  return items as readonly string[];
+});
 
-const blockedExtensions = z
-  .string()
-  .transform((raw) => {
-    const items = raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-      .map((s) => s.toLowerCase())
-      .map((s) => (s.startsWith('.') ? s : `.${s}`));
-    return items as readonly string[];
-  });
+const blockedExtensions = z.string().transform((raw) => {
+  const items = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((s) => s.toLowerCase())
+    .map((s) => (s.startsWith('.') ? s : `.${s}`));
+  return items as readonly string[];
+});
 
-const allowedUpdates = z
-  .string()
-  .transform((raw, ctx) => {
-    const items = raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    if (items.length === 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must list at least one update type' });
+const allowedUpdates = z.string().transform((raw, ctx) => {
+  const items = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (items.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must list at least one update type' });
+    return z.NEVER;
+  }
+  for (const it of items) {
+    if (!ALLOWED_UPDATE_TYPES.has(it)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `"${it}" is not a supported update type (allowed: ${[...ALLOWED_UPDATE_TYPES].join(', ')})`,
+      });
       return z.NEVER;
     }
-    for (const it of items) {
-      if (!ALLOWED_UPDATE_TYPES.has(it)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `"${it}" is not a supported update type (allowed: ${[...ALLOWED_UPDATE_TYPES].join(', ')})`,
-        });
-        return z.NEVER;
-      }
-    }
-    return items as readonly string[];
-  });
+  }
+  return items as readonly string[];
+});
 
 const nodeEnv = z.enum(['development', 'production', 'test']);
 const locale = z.enum(['th', 'en']);
@@ -264,15 +237,13 @@ const baseSchema = z.object({
   ENABLE_MINI_APP: boolFromString,
   MINI_APP_URL: z.string().transform((s) => s.trim()),
   MINI_APP_API_BASE_URL: z.string().transform((s) => s.trim()),
-  MINI_APP_ALLOWED_ORIGINS: z
-    .string()
-    .transform((raw) => {
-      const items = raw
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      return items as readonly string[];
-    }),
+  MINI_APP_ALLOWED_ORIGINS: z.string().transform((raw) => {
+    const items = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    return items as readonly string[];
+  }),
   MINI_APP_INITDATA_MAX_AGE_SECONDS: intFromString({ min: 60, max: 30 * 24 * 60 * 60 }),
 
   // Collections / media bundles. A share code can resolve to either a single
@@ -426,11 +397,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     });
 
     const summary = issues.map((i) => `  - ${i.path}: ${i.message} (got: ${i.value})`).join('\n');
-    throw new AppError(
-      ErrorCode.CONFIG_INVALID,
-      `Invalid environment configuration:\n${summary}`,
-      { meta: { issues } },
-    );
+    throw new AppError(ErrorCode.CONFIG_INVALID, `Invalid environment configuration:\n${summary}`, {
+      meta: { issues },
+    });
   }
 
   const parsed = result.data;
@@ -455,7 +424,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     REPORT_LIMIT_PER_HOUR: parsed.REPORT_LIMIT_PER_HOUR,
     AUTO_LOCK_REPORT_THRESHOLD: parsed.AUTO_LOCK_REPORT_THRESHOLD,
     DEFAULT_FILE_EXPIRY_DAYS: parsed.DEFAULT_FILE_EXPIRY_DAYS,
-    BOT_POLLING_ALLOWED_UPDATES: Object.freeze([...parsed.BOT_POLLING_ALLOWED_UPDATES]) as readonly string[],
+    BOT_POLLING_ALLOWED_UPDATES: Object.freeze([
+      ...parsed.BOT_POLLING_ALLOWED_UPDATES,
+    ]) as readonly string[],
     ENABLE_PASSWORD_PROTECTION: parsed.ENABLE_PASSWORD_PROTECTION,
     ENABLE_FILE_EXPIRY: parsed.ENABLE_FILE_EXPIRY,
     ENABLE_REPORTS: parsed.ENABLE_REPORTS,
@@ -467,7 +438,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ENABLE_MINI_APP: parsed.ENABLE_MINI_APP,
     MINI_APP_URL: parsed.MINI_APP_URL,
     MINI_APP_API_BASE_URL: parsed.MINI_APP_API_BASE_URL,
-    MINI_APP_ALLOWED_ORIGINS: Object.freeze([...parsed.MINI_APP_ALLOWED_ORIGINS]) as readonly string[],
+    MINI_APP_ALLOWED_ORIGINS: Object.freeze([
+      ...parsed.MINI_APP_ALLOWED_ORIGINS,
+    ]) as readonly string[],
     MINI_APP_INITDATA_MAX_AGE_SECONDS: parsed.MINI_APP_INITDATA_MAX_AGE_SECONDS,
     ENABLE_COLLECTIONS: parsed.ENABLE_COLLECTIONS,
     COLLECTION_PAGE_SIZE: parsed.COLLECTION_PAGE_SIZE,

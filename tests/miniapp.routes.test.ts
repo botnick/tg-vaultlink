@@ -181,7 +181,7 @@ describe('Mini App HTTP API', () => {
     expect(body.data.is_admin).toBe(false);
   });
 
-  it('GET /api/v1/files only lists the caller\'s files', async () => {
+  it("GET /api/v1/files only lists the caller's files", async () => {
     // Pre-create both users in the DB *with the IDs that match the headers*
     // so the file rows we seed below carry the right owner_user_id.
     const userA = seedUser(w.env.repos, '1001');

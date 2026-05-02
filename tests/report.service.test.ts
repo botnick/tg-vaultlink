@@ -140,10 +140,7 @@ describe('report.service — feature flag', () => {
 
 describe('report.service — input validation', () => {
   it('rejects an empty reason with INVALID_INPUT', () => {
-    expectAppError(
-      () => reports.submit({ reporter, file, reason: '' }),
-      ErrorCode.INVALID_INPUT,
-    );
+    expectAppError(() => reports.submit({ reporter, file, reason: '' }), ErrorCode.INVALID_INPUT);
   });
 
   it('rejects whitespace-only reason with INVALID_INPUT', () => {

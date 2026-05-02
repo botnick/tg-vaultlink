@@ -35,21 +35,14 @@ import type { BotRepository } from '../repositories/bot.repository.js';
 import type { CollectionRepository } from '../repositories/collection.repository.js';
 import type { CollectionDraftRepository } from '../repositories/collectionDraft.repository.js';
 import type { AuditService } from './audit.service.js';
-import {
-  hashPassword,
-  verifyPassword,
-  validatePasswordLength,
-} from './password.service.js';
+import { hashPassword, verifyPassword, validatePasswordLength } from './password.service.js';
 import { AppError, ErrorCode } from '../utils/errors.js';
 import { generateCode } from '../utils/codeGenerator.js';
 import { parseShareCode } from '../utils/codeParser.js';
 import { addDays, isExpired } from '../utils/date.js';
 import { truncate } from '../utils/safeText.js';
 import { t } from '../utils/i18n.js';
-import {
-  CAPTION_MAX_LENGTH,
-  FILENAME_MAX_LENGTH,
-} from '../config/constants.js';
+import { CAPTION_MAX_LENGTH, FILENAME_MAX_LENGTH } from '../config/constants.js';
 
 /* -------------------------------------------------------------------------- *
  * Public types
@@ -187,11 +180,7 @@ export class ShareService {
    */
   createCollectionDraft(owner: UserRow, bot: ManagedBotRow): CollectionDraftRow {
     if (!this.config.ENABLE_COLLECTIONS) {
-      throw new AppError(
-        ErrorCode.FEATURE_DISABLED,
-        'collections are disabled',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.FEATURE_DISABLED, 'collections are disabled', { expose: true });
     }
     const existing = this.drafts.findOpenByOwner(bot.id, owner.id);
     if (existing) return existing;
@@ -221,23 +210,14 @@ export class ShareService {
    * Append a new item to a draft. Enforces the per-collection cap and the
    * collections feature flag. Returns the inserted item row.
    */
-  addItemToDraft(
-    draft: CollectionDraftRow,
-    meta: DraftItemMeta,
-  ): CollectionDraftItemRow {
+  addItemToDraft(draft: CollectionDraftRow, meta: DraftItemMeta): CollectionDraftItemRow {
     if (!this.config.ENABLE_COLLECTIONS) {
-      throw new AppError(
-        ErrorCode.FEATURE_DISABLED,
-        'collections are disabled',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.FEATURE_DISABLED, 'collections are disabled', { expose: true });
     }
     if (draft.status !== 'open') {
-      throw new AppError(
-        ErrorCode.INVALID_INPUT,
-        'this draft is no longer accepting items',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.INVALID_INPUT, 'this draft is no longer accepting items', {
+        expose: true,
+      });
     }
     const current = this.drafts.countItems(draft.id);
     if (current >= this.config.MAX_COLLECTION_ITEMS) {
@@ -248,10 +228,8 @@ export class ShareService {
       );
     }
     const sortOrder = current; // 0-indexed
-    const caption =
-      meta.caption === null ? null : truncate(meta.caption, CAPTION_MAX_LENGTH);
-    const fileName =
-      meta.file_name === null ? null : truncate(meta.file_name, FILENAME_MAX_LENGTH);
+    const caption = meta.caption === null ? null : truncate(meta.caption, CAPTION_MAX_LENGTH);
+    const fileName = meta.file_name === null ? null : truncate(meta.file_name, FILENAME_MAX_LENGTH);
     return this.drafts.insertItem({
       draft_id: draft.id,
       telegram_file_id: meta.telegram_file_id,
@@ -301,36 +279,26 @@ export class ShareService {
     },
   ): Promise<FinishCollectionResult> {
     if (!this.config.ENABLE_COLLECTIONS) {
-      throw new AppError(
-        ErrorCode.FEATURE_DISABLED,
-        'collections are disabled',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.FEATURE_DISABLED, 'collections are disabled', { expose: true });
     }
     if (draft.status !== 'open') {
-      throw new AppError(
-        ErrorCode.INVALID_INPUT,
-        'this draft can no longer be finished',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.INVALID_INPUT, 'this draft can no longer be finished', {
+        expose: true,
+      });
     }
     const items = this.drafts.listItems(draft.id);
     if (items.length === 0) {
-      throw new AppError(
-        ErrorCode.INVALID_INPUT,
-        'cannot finish an empty collection',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.INVALID_INPUT, 'cannot finish an empty collection', {
+        expose: true,
+      });
     }
 
     let passwordHash: string | null = null;
     if (opts?.password !== undefined && opts.password !== null && opts.password !== '') {
       if (!this.config.ENABLE_PASSWORD_PROTECTION) {
-        throw new AppError(
-          ErrorCode.FEATURE_DISABLED,
-          'password protection is disabled',
-          { expose: true },
-        );
+        throw new AppError(ErrorCode.FEATURE_DISABLED, 'password protection is disabled', {
+          expose: true,
+        });
       }
       validatePasswordLength(opts.password);
       passwordHash = await hashPassword(opts.password);
@@ -472,19 +440,11 @@ export class ShareService {
     if (c.password_hash !== null) {
       const supplied = input.password ?? '';
       if (supplied.length === 0) {
-        throw new AppError(
-          ErrorCode.PASSWORD_REQUIRED,
-          'password required',
-          { expose: true },
-        );
+        throw new AppError(ErrorCode.PASSWORD_REQUIRED, 'password required', { expose: true });
       }
       const ok = await verifyPassword(c.password_hash, supplied);
       if (!ok) {
-        throw new AppError(
-          ErrorCode.PASSWORD_INCORRECT,
-          'incorrect password',
-          { expose: true },
-        );
+        throw new AppError(ErrorCode.PASSWORD_INCORRECT, 'incorrect password', { expose: true });
       }
     }
     return c;
@@ -516,7 +476,8 @@ export class ShareService {
 
   setLocked(c: CollectionRow, locked: boolean, actor: UserRow): CollectionRow {
     const updated = this.collections.setLocked(c.id, locked);
-    if (!updated) throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
+    if (!updated)
+      throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
     this.audit.log(locked ? 'collection.locked' : 'collection.unlocked', {
       actorUserId: actor.id,
       targetType: 'collection',
@@ -525,22 +486,17 @@ export class ShareService {
     return updated;
   }
 
-  async setPassword(
-    c: CollectionRow,
-    password: string,
-    actor: UserRow,
-  ): Promise<CollectionRow> {
+  async setPassword(c: CollectionRow, password: string, actor: UserRow): Promise<CollectionRow> {
     if (!this.config.ENABLE_PASSWORD_PROTECTION) {
-      throw new AppError(
-        ErrorCode.FEATURE_DISABLED,
-        'password protection is disabled',
-        { expose: true },
-      );
+      throw new AppError(ErrorCode.FEATURE_DISABLED, 'password protection is disabled', {
+        expose: true,
+      });
     }
     validatePasswordLength(password);
     const hash = await hashPassword(password);
     const updated = this.collections.setPasswordHash(c.id, hash);
-    if (!updated) throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
+    if (!updated)
+      throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
     this.audit.log('collection.password_set', {
       actorUserId: actor.id,
       targetType: 'collection',
@@ -551,7 +507,8 @@ export class ShareService {
 
   removePassword(c: CollectionRow, actor: UserRow): CollectionRow {
     const updated = this.collections.setPasswordHash(c.id, null);
-    if (!updated) throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
+    if (!updated)
+      throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
     this.audit.log('collection.password_removed', {
       actorUserId: actor.id,
       targetType: 'collection',
@@ -566,11 +523,9 @@ export class ShareService {
       expiresAt = null;
     } else {
       if (!Number.isInteger(days) || days < 0) {
-        throw new AppError(
-          ErrorCode.INVALID_INPUT,
-          'expiry must be a non-negative integer',
-          { expose: true },
-        );
+        throw new AppError(ErrorCode.INVALID_INPUT, 'expiry must be a non-negative integer', {
+          expose: true,
+        });
       }
       if (!this.config.ENABLE_FILE_EXPIRY) {
         throw new AppError(ErrorCode.FEATURE_DISABLED, 'file expiry is disabled', {
@@ -580,7 +535,8 @@ export class ShareService {
       expiresAt = addDays(new Date(), days).toISOString();
     }
     const updated = this.collections.setExpiresAt(c.id, expiresAt);
-    if (!updated) throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
+    if (!updated)
+      throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
     this.audit.log('collection.expiry_set', {
       actorUserId: actor.id,
       targetType: 'collection',
@@ -590,13 +546,10 @@ export class ShareService {
     return updated;
   }
 
-  setVisibility(
-    c: CollectionRow,
-    vis: FileVisibility,
-    actor: UserRow,
-  ): CollectionRow {
+  setVisibility(c: CollectionRow, vis: FileVisibility, actor: UserRow): CollectionRow {
     const updated = this.collections.setVisibility(c.id, vis);
-    if (!updated) throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
+    if (!updated)
+      throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
     this.audit.log('collection.visibility_set', {
       actorUserId: actor.id,
       targetType: 'collection',
@@ -612,7 +565,8 @@ export class ShareService {
     actor: UserRow,
   ): CollectionRow {
     const updated = this.collections.setMetadata(c.id, fields);
-    if (!updated) throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
+    if (!updated)
+      throw new AppError(ErrorCode.INTERNAL_ERROR, 'collection disappeared during update');
     this.audit.log('collection.metadata_set', {
       actorUserId: actor.id,
       targetType: 'collection',
