@@ -368,13 +368,26 @@ export class FileService {
    * Internals
    * --------------------------------------------------------------------- */
 
-  private isBlockedExtension(fileName: string): boolean {
+  /**
+   * Public so the upload router can run the same validation EARLY — at the
+   * moment each file arrives — instead of waiting until the session
+   * finalises. Catching it early gives the user immediate feedback and
+   * avoids leaving an orphan collection draft behind.
+   */
+  isBlockedExtension(fileName: string): boolean {
     const lower = fileName.toLowerCase();
     for (const ext of this.config.BLOCKED_EXTENSIONS) {
       // Stored extensions are normalized to start with '.' by env loader.
       if (lower.endsWith(ext)) return true;
     }
     return false;
+  }
+
+  /** Public mirror of the size-cap check used internally by `upload()`. */
+  isFileTooLarge(sizeBytes: number | null): boolean {
+    if (sizeBytes === null) return false;
+    const maxBytes = this.config.MAX_FILE_SIZE_MB * 1024 * 1024;
+    return sizeBytes > maxBytes;
   }
 
   private resolveExpiry(requestedDays: number | null): string | null {

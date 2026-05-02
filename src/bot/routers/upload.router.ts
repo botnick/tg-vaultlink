@@ -29,6 +29,7 @@ import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context.js';
 import { extractFileMeta, type ExtractedFileMeta } from '../../utils/fileMeta.js';
 import { escapeHtml } from '../../utils/safeText.js';
+import { formatBytes } from '../../utils/formatBytes.js';
 import { AppError } from '../../utils/errors.js';
 import { getLogger } from '../../logger/logger.js';
 import { t } from '../../utils/i18n.js';
@@ -112,6 +113,21 @@ export function registerUploadRouter(composer: Composer<AppContext>): void {
     const meta = extractFileMeta(message);
     if (!meta) {
       await ctx.reply(ctx.t('upload.no_file'));
+      return;
+    }
+
+    // Early size + extension validation — same checks `FileService.upload`
+    // would run, lifted out so we reject BEFORE the item joins the draft.
+    // Otherwise an oversized file would only fail at session finalise,
+    // leaving the draft orphaned and surfacing a non-localized error
+    // through the global error boundary.
+    if (ctx.services.file.isFileTooLarge(meta.size_bytes)) {
+      const maxLabel = formatBytes(ctx.config.MAX_FILE_SIZE_MB * 1024 * 1024);
+      await ctx.reply(ctx.t('upload.too_large', { maxSize: maxLabel }));
+      return;
+    }
+    if (meta.file_name !== null && ctx.services.file.isBlockedExtension(meta.file_name)) {
+      await ctx.reply(ctx.t('upload.type_blocked'));
       return;
     }
 
@@ -409,13 +425,26 @@ async function finalizeSession(
         link_preview_options: { is_disabled: true },
       });
     } catch (err) {
-      log.error({ err, draftId: session.draftId }, 'failed to finalize 1-item session');
+      // Drop the orphaned draft so it doesn't show up in /files or take up
+      // space until its TTL expires. The early validation in the upload
+      // handler catches the common cases (size, blocked extension), but
+      // anything else (e.g. a transient FK race) lands here.
+      try {
+        fctx.repos.collectionDrafts.delete(draft.id);
+      } catch {
+        // already gone — fine
+      }
+      // Expected user-input rejections (`expose: true`) get a `warn`; only
+      // truly unexpected failures escalate to `error`.
       if (err instanceof AppError && err.expose) {
+        log.warn({ err, draftId: session.draftId }, 'failed to finalize 1-item session (expected)');
         try {
           await fctx.api.sendMessage(fctx.chatId, err.message);
         } catch {
           // best-effort
         }
+      } else {
+        log.error({ err, draftId: session.draftId }, 'failed to finalize 1-item session');
       }
     }
     return;

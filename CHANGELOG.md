@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-03
+
+### Fixed
+
+- **Oversized files now reject early** (when each file arrives) instead of
+  silently passing into the upload session and only failing at finalise.
+  The `MAX_FILE_SIZE_MB` check + blocked-extension check were lifted out
+  of `FileService.upload` into the upload-router attachment handler so the
+  user sees a localized "file is too large (max …)" reply immediately —
+  no more orphan drafts left behind by a 1-item session that couldn't
+  ship. `FileService.isFileTooLarge` and `FileService.isBlockedExtension`
+  are now public so the router can run the same predicates. Defensive
+  cleanup also drops the draft if `finalizeSession` ever fails for
+  another reason.
+
+### Changed
+
+- **Quieter logs for expected user-input rejections.** AppError instances
+  with `expose: true` (invalid token, file too large, password incorrect,
+  not-found, locked, expired, etc.) now log at `warn` instead of `error` —
+  these are normal traffic, not alerts. Genuine surprises (`expose:false`)
+  still log at `error`. Same downgrade applied to the upload router's
+  finalize-failure path.
+
 ## [0.2.1] - 2026-05-02
 
 ### Added (founder-tier admin)
@@ -333,7 +357,8 @@ timeout=0)` so Telegram releases the long-poll session immediately
 - Standalone and Docker runtimes.
 - Auto build & release workflow on `v*` tags.
 
-[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.2
 [0.2.1]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.1
 [0.2.0]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.0
 [0.1.0]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.1.0

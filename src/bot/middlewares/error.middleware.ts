@@ -88,7 +88,12 @@ export function installErrorHandler(bot: Bot<AppContext>, config: Config): void 
     }
 
     if (cause instanceof AppError) {
-      log.error(
+      // `expose: true` AppErrors are user-input rejections (invalid token,
+      // file too large, password incorrect, …) — log them at warn so the
+      // error log isn't flooded with what is, operationally, normal traffic.
+      // Anything else is a real surprise → log at error.
+      const logLevel = cause.expose ? 'warn' : 'error';
+      log[logLevel](
         {
           err: cause,
           code: cause.code,
