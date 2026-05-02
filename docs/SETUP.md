@@ -443,21 +443,85 @@ docker compose logs -f
 
 ## 14. ภาคผนวก: Webhook vs Long polling
 
-VaultLink รัน **long polling** (`getUpdates`) ผ่าน `@grammyjs/runner` ตลอดในทั้ง dev และ Docker — ไม่ใช้ webhook เลย เหตุผล:
+VaultLink รองรับ **ทั้งสองแบบ** สลับด้วย `TELEGRAM_UPDATE_MODE` ใน `.env`:
 
-- ไม่ต้องเปิด port public, ไม่ต้องมี HTTPS reverse proxy
-- รันหลังบ้าน home network ก็ได้
-- Single-process model ทำให้ logic ง่าย และ throttle/retry คาดเดาได้
+| ค่า         | ใครเรียกใคร                           | ต้องมี                                                        |
+| ----------- | ------------------------------------- | ------------------------------------------------------------- |
+| `long_poll` | บอท poll Telegram                     | อะไรก็ได้ (อยู่หลัง NAT ก็ได้, ไม่ต้องมี public IP/HTTPS)     |
+| `webhook`   | Telegram POST เข้ามาที่ HTTP endpoint | public HTTPS, port 80/88/443/8443 (หรือ reverse-proxy ไป 443) |
 
-ผลตามมา:
+### 14.1 long_poll (default)
 
-- **บอท 1 token รันได้แค่ 1 instance พร้อมกัน** ถ้ารันสองที่ตัวที่สองจะโดน 409 Conflict (ดูข้อ 10)
-- ห้ามใช้ webhook พร้อม polling — ถ้าเคยตั้ง webhook ไว้ต้องลบก่อน:
-  ```
-  https://api.telegram.org/bot<TOKEN>/deleteWebhook?drop_pending_updates=true
-  ```
+ตั้งใน `.env`:
 
-ถ้าวันหนึ่งจะย้ายไป webhook (เช่น deploy บน Cloudflare Workers): ต้องเขียน HTTP handler ใหม่และเรียก `setWebhook` ตอน deploy ข้อมูลและ schema ของ DB ใช้ได้ตามเดิม
+```env
+TELEGRAM_UPDATE_MODE=long_poll
+```
+
+เริ่มเลยด้วย `pnpm dev` — บอทเรียก `getUpdates` ผ่าน `@grammyjs/runner` ค่าทูนนิ่งใน `RUNNER_CONCURRENCY` กับ `TELEGRAM_LONG_POLL_TIMEOUT_SECONDS` คุม concurrency กับ poll timeout ตามลำดับ
+
+ก่อน start จริง bootstrap จะ probe ด้วย `getUpdates(timeout=0, offset=-1)` ให้ Telegram ปล่อย long-poll ค้างจาก process ก่อนหน้า — ทำให้กด `Ctrl+C` แล้ว restart ทันทีไม่เจอ 409 อีก
+
+ข้อจำกัด: token เดียว รัน poll ได้แค่ **1 instance พร้อมกัน** ถ้ามี deploy อื่นใช้ token เดียวกัน จะ 409 ต่อกันไปมา
+
+### 14.2 webhook
+
+ตั้งใน `.env`:
+
+```env
+TELEGRAM_UPDATE_MODE=webhook
+WEBHOOK_BASE_URL=https://your-public-host.example.com
+WEBHOOK_PORT=8443
+WEBHOOK_SECRET_TOKEN=optional-but-recommended-secret
+```
+
+ข้อกำหนดของ Telegram:
+
+- HTTPS เท่านั้น (cert valid, self-signed ก็ได้แต่ต้อง upload ผ่าน setWebhook — VaultLink ยังไม่รองรับ self-signed flow)
+- port: 80, 88, 443, 8443 (หรือ reverse-proxy 443 → `WEBHOOK_PORT` ใดก็ได้ในเครื่อง)
+- IP block ของ Telegram: `149.154.160.0/20`, `91.108.4.0/22` — ถ้า firewall อยากกรอง
+
+### 14.3 Path layout ใน webhook mode
+
+```
+POST  https://<host>/webhook/<telegram_bot_id>   → ส่งให้ bot ตัวนั้น
+GET   https://<host>/healthz                      → liveness probe (200)
+*     https://<host>/...                          → 404 (ไม่บอกว่ามี botId อะไรอยู่บ้าง)
+```
+
+main bot และ child bots ทุกตัวใช้ server เดียวกัน path แยกตาม `telegram_bot_id` (numeric) — `telegram_bot_id` คือเลขก่อน `:` ของ token
+
+ถ้าตั้ง `WEBHOOK_SECRET_TOKEN`: ทุก request ต้องมี header `X-Telegram-Bot-Api-Secret-Token` ตรงค่านี้เท่านั้น มิเช่นนั้น grammY จะ reject 401 — กันคนยิง webhook ปลอม
+
+### 14.4 ทดสอบ webhook ใน local ด้วย ngrok / cloudflared
+
+```powershell
+# 1. start tunnel ที่ PORT ของ webhook (ตัวอย่างใช้ port 8443)
+ngrok http 8443
+
+# 2. จด URL https ที่ ngrok ให้
+
+# 3. แก้ .env
+#    TELEGRAM_UPDATE_MODE=webhook
+#    WEBHOOK_BASE_URL=https://abcd.ngrok-free.app
+#    WEBHOOK_PORT=8443
+#    WEBHOOK_SECRET_TOKEN=long-random-string-or-leave-blank
+
+# 4. restart pnpm dev — log ควรขึ้น:
+#    "webhook server listening on :8443"
+#    "main bot webhook registered  url=https://abcd.ngrok-free.app/webhook/<id>"
+```
+
+ส่งข้อความให้บอทใน Telegram — Telegram จะ POST เข้ามาผ่าน tunnel ✅
+
+### 14.5 สลับไปกลับระหว่างโหมด
+
+bootstrap เคลียร์ state ฝั่ง Telegram ให้อัตโนมัติ:
+
+- เข้าโหมด `webhook`: ระบบเรียก `setWebhook` ของบอทแต่ละตัว
+- เข้าโหมด `long_poll`: ระบบเรียก `deleteWebhook` ก่อน start runner
+
+แค่แก้ `.env` แล้ว restart ก็พอ ไม่ต้องลบมือ ไม่ต้อง `db:reset`
 
 ---
 

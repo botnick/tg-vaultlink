@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (transport)
+
+- `TELEGRAM_UPDATE_MODE` env switch — pick `long_poll` (default, current
+  behaviour) or `webhook`. In webhook mode every managed bot is registered
+  on a single Hono listener at `<WEBHOOK_BASE_URL>/webhook/<telegram_bot_id>`
+  with the optional `secret_token` header check. Telegram POSTs in instead
+  of the bot polling out, which sidesteps the 409-Conflict races that arise
+  when more than one process holds a `getUpdates` lock for the same token.
+  New env: `WEBHOOK_BASE_URL`, `WEBHOOK_PORT`, `WEBHOOK_SECRET_TOKEN`.
+- Long-poll preflight: before starting the runner the bootstrap now calls
+  `getUpdates(timeout=0, offset=-1)` and retries on 409 until the stale
+  poll lock from the previous process expires. Translation: a clean
+  `Ctrl+C` followed by an immediate restart no longer fails with 409.
+
 ### Fixed (operational reliability)
 
 - Main bot now self-heals its `managed_bots` row on every successful boot:

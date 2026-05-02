@@ -194,6 +194,10 @@ const allowedUpdates = z.string().transform((raw, ctx) => {
 const nodeEnv = z.enum(['development', 'production', 'test']);
 const locale = z.enum(['th', 'en']);
 const logLevel = z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']);
+const updateMode = z.enum(['long_poll', 'webhook']);
+
+/** Telegram's permitted webhook secret_token alphabet: A-Z a-z 0-9 _ -, length 1-256. */
+const WEBHOOK_SECRET_TOKEN_RE = /^[A-Za-z0-9_-]{1,256}$/;
 
 const baseSchema = z.object({
   NODE_ENV: nodeEnv,
@@ -220,6 +224,14 @@ const baseSchema = z.object({
   DEFAULT_FILE_EXPIRY_DAYS: intFromString({ min: 0, max: 36_500 }),
 
   BOT_POLLING_ALLOWED_UPDATES: allowedUpdates,
+
+  // How updates reach the bot. `long_poll` is the default and works behind
+  // any NAT — no public HTTPS required. `webhook` lets Telegram POST updates
+  // to a public HTTPS endpoint we expose; pairs with `WEBHOOK_*` below.
+  TELEGRAM_UPDATE_MODE: updateMode,
+  WEBHOOK_BASE_URL: z.string().transform((s) => s.trim()),
+  WEBHOOK_PORT: intFromString({ min: 1, max: 65_535 }),
+  WEBHOOK_SECRET_TOKEN: z.string().transform((s) => s.trim()),
 
   ENABLE_PASSWORD_PROTECTION: boolFromString,
   ENABLE_FILE_EXPIRY: boolFromString,
@@ -307,6 +319,35 @@ const schema = baseSchema.superRefine((parsed, ctx) => {
       });
     }
   }
+  if (parsed.TELEGRAM_UPDATE_MODE === 'webhook') {
+    const isHttpsUrl = (v: string) => {
+      if (!v) return false;
+      try {
+        const u = new URL(v);
+        return u.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    };
+    if (!isHttpsUrl(parsed.WEBHOOK_BASE_URL)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['WEBHOOK_BASE_URL'],
+        message:
+          'must be a valid https:// URL when TELEGRAM_UPDATE_MODE=webhook (Telegram refuses plain http)',
+      });
+    }
+    // Telegram caps the secret_token to its own alphabet. The value is
+    // optional, but if provided it must be valid — silent rejection at
+    // setWebhook time is hostile.
+    if (parsed.WEBHOOK_SECRET_TOKEN && !WEBHOOK_SECRET_TOKEN_RE.test(parsed.WEBHOOK_SECRET_TOKEN)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['WEBHOOK_SECRET_TOKEN'],
+        message: 'must match [A-Za-z0-9_-]{1,256} (Telegram secret_token alphabet)',
+      });
+    }
+  }
 });
 
 /* ------------------------------------------------------------------------- *
@@ -335,6 +376,10 @@ export interface Config {
   AUTO_LOCK_REPORT_THRESHOLD: number;
   DEFAULT_FILE_EXPIRY_DAYS: number;
   BOT_POLLING_ALLOWED_UPDATES: readonly string[];
+  TELEGRAM_UPDATE_MODE: 'long_poll' | 'webhook';
+  WEBHOOK_BASE_URL: string;
+  WEBHOOK_PORT: number;
+  WEBHOOK_SECRET_TOKEN: string;
   ENABLE_PASSWORD_PROTECTION: boolean;
   ENABLE_FILE_EXPIRY: boolean;
   ENABLE_REPORTS: boolean;
@@ -427,6 +472,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     BOT_POLLING_ALLOWED_UPDATES: Object.freeze([
       ...parsed.BOT_POLLING_ALLOWED_UPDATES,
     ]) as readonly string[],
+    TELEGRAM_UPDATE_MODE: parsed.TELEGRAM_UPDATE_MODE,
+    WEBHOOK_BASE_URL: parsed.WEBHOOK_BASE_URL,
+    WEBHOOK_PORT: parsed.WEBHOOK_PORT,
+    WEBHOOK_SECRET_TOKEN: parsed.WEBHOOK_SECRET_TOKEN,
     ENABLE_PASSWORD_PROTECTION: parsed.ENABLE_PASSWORD_PROTECTION,
     ENABLE_FILE_EXPIRY: parsed.ENABLE_FILE_EXPIRY,
     ENABLE_REPORTS: parsed.ENABLE_REPORTS,

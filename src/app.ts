@@ -10,7 +10,7 @@
  */
 
 import type { Update } from 'grammy/types';
-import { run, sequentialize } from '@grammyjs/runner';
+import { run, sequentialize, type RunnerHandle } from '@grammyjs/runner';
 import { getConfig } from './config/env.js';
 import { getLogger } from './logger/logger.js';
 import { getDatabase, closeDatabase } from './db/database.js';
@@ -39,6 +39,7 @@ import { ShareService } from './services/share.service.js';
 
 import { bootstrapMainBot, defaultGetMeFn } from './bot/mainBot.js';
 import { ChildBotManager } from './bot/childBotManager.js';
+import { createWebhookServer, type WebhookServer } from './bot/webhookServer.js';
 import type { AppRepos, AppServices } from './bot/context.js';
 
 export interface AppHandle {
@@ -100,15 +101,24 @@ export async function startApp(): Promise<AppHandle> {
     share,
   };
 
-  // 4) Child-bot manager (constructed up-front so the main bot can reference it).
+  // 4) Optional webhook listener — built once when TELEGRAM_UPDATE_MODE=webhook
+  // so both the main bot and every child bot can share one HTTP port. In
+  // long_poll mode this stays `null` and no HTTP listener is opened.
+  let webhookServer: WebhookServer | null = null;
+  if (config.TELEGRAM_UPDATE_MODE === 'webhook') {
+    webhookServer = createWebhookServer({ port: config.WEBHOOK_PORT });
+  }
+
+  // 5) Child-bot manager (constructed up-front so the main bot can reference it).
   const childManager = new ChildBotManager({
     config,
     services,
     repos,
     getMeFn: defaultGetMeFn,
+    ...(webhookServer ? { webhookServer } : {}),
   });
 
-  // 5) Main bot.
+  // 6) Main bot.
   const main = await bootstrapMainBot({
     config,
     services,
@@ -116,28 +126,88 @@ export async function startApp(): Promise<AppHandle> {
     childManager,
   });
 
-  // 6) Start polling via @grammyjs/runner — concurrent update processing
-  // with per-user serialization (so two updates from the same Telegram user
-  // never race), all knobs config-driven so future Telegram limit changes
-  // are an env edit instead of a code change.
   type AllowedUpdate = Exclude<keyof Update, 'update_id'>;
   const allowedUpdates = [...config.BOT_POLLING_ALLOWED_UPDATES] as AllowedUpdate[];
   main.bot.use(sequentialize((ctx) => ctx.from?.id?.toString()));
-  const mainRunner = run(main.bot, {
-    runner: {
-      fetch: {
-        allowed_updates: allowedUpdates,
-        timeout: config.TELEGRAM_LONG_POLL_TIMEOUT_SECONDS,
-      },
-    },
-    sink: { concurrency: config.RUNNER_CONCURRENCY },
-  });
-  log.info(
-    { username: main.record.username, concurrency: config.RUNNER_CONCURRENCY },
-    'main bot started',
-  );
 
-  // 7) Optionally start child bots.
+  // 7) Start the main bot via the chosen update channel.
+  let mainRunner: RunnerHandle | null = null;
+  let stopMain: () => Promise<void>;
+  if (webhookServer && config.TELEGRAM_UPDATE_MODE === 'webhook') {
+    const secret = config.WEBHOOK_SECRET_TOKEN || null;
+    webhookServer.register(main.record.telegram_bot_id, main.bot, secret);
+    await webhookServer.start();
+    const url = `${config.WEBHOOK_BASE_URL.replace(/\/+$/, '')}/webhook/${main.record.telegram_bot_id}`;
+    await main.bot.api.setWebhook(url, {
+      ...(secret ? { secret_token: secret } : {}),
+      allowed_updates: allowedUpdates,
+      drop_pending_updates: false,
+    });
+    log.info({ username: main.record.username, url }, 'main bot webhook registered');
+    stopMain = async () => {
+      try {
+        await main.bot.api.deleteWebhook({ drop_pending_updates: false });
+      } catch (err) {
+        log.warn({ err }, 'failed to deleteWebhook on shutdown');
+      }
+    };
+  } else {
+    // Long polling via @grammyjs/runner — per-user sequentialize keeps two
+    // updates from the same Telegram user from racing on shared state.
+    //
+    // Preflight: a previous run that died with SIGINT or a hard crash may
+    // have left a long-poll request hanging on Telegram's side. Until that
+    // request expires (up to TELEGRAM_LONG_POLL_TIMEOUT_SECONDS), every new
+    // getUpdates returns 409. Probe with a non-blocking getUpdates and
+    // retry until Telegram releases the lock. Also nukes any leftover
+    // webhook so the bot definitely starts in pure-polling mode.
+    try {
+      await main.bot.api.deleteWebhook({ drop_pending_updates: false });
+    } catch (err) {
+      log.warn({ err }, 'preflight deleteWebhook failed (probably no webhook set)');
+    }
+    const maxWaitMs = (config.TELEGRAM_LONG_POLL_TIMEOUT_SECONDS + 10) * 1000;
+    const start = Date.now();
+    let attempts = 0;
+    let cleared = false;
+    while (!cleared) {
+      attempts++;
+      try {
+        await main.bot.api.getUpdates({ timeout: 0, offset: -1, limit: 1 });
+        if (attempts > 1) {
+          log.info({ attempts }, 'poll lock cleared');
+        }
+        cleared = true;
+      } catch (err) {
+        const code = (err as { error_code?: number }).error_code;
+        if (code === 409 && Date.now() - start < maxWaitMs) {
+          log.info({ attempts }, 'waiting for stale getUpdates lock to expire');
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          continue;
+        }
+        log.warn({ err, attempts }, 'poll lock preflight gave up; starting anyway');
+        break;
+      }
+    }
+    mainRunner = run(main.bot, {
+      runner: {
+        fetch: {
+          allowed_updates: allowedUpdates,
+          timeout: config.TELEGRAM_LONG_POLL_TIMEOUT_SECONDS,
+        },
+      },
+      sink: { concurrency: config.RUNNER_CONCURRENCY },
+    });
+    log.info(
+      { username: main.record.username, concurrency: config.RUNNER_CONCURRENCY },
+      'main bot started',
+    );
+    stopMain = async () => {
+      if (mainRunner) await mainRunner.stop();
+    };
+  }
+
+  // 8) Optionally start child bots.
   if (config.ENABLE_CHILD_BOTS) {
     try {
       const result = await childManager.startAll();
@@ -147,7 +217,7 @@ export async function startApp(): Promise<AppHandle> {
     }
   }
 
-  // 8) Optionally start the Mini App backend (Wave 4b). The module is loaded
+  // 9) Optionally start the Mini App backend. The module is loaded
   // dynamically so a misconfigured Mini App build cannot block the bot's
   // hot-path bootstrap.
   let miniAppHandle: { stop(): Promise<void> } | null = null;
@@ -163,7 +233,7 @@ export async function startApp(): Promise<AppHandle> {
     }
   }
 
-  // 9) Periodic cleanup: collection drafts past their TTL pile up otherwise
+  // 10) Periodic cleanup: collection drafts past their TTL pile up otherwise
   // (the schema ON DELETE CASCADE removes their items in the same statement).
   // We hold the timer handle so the shutdown path can clear it; without that
   // the process would not exit on a clean stop.
@@ -184,7 +254,7 @@ export async function startApp(): Promise<AppHandle> {
     if (typeof draftCleanupTimer.unref === 'function') draftCleanupTimer.unref();
   }
 
-  // 10) Signal wiring.
+  // 11) Signal wiring.
   let shuttingDown = false;
   const shutdown = async (reason: string): Promise<void> => {
     if (shuttingDown) return;
@@ -197,7 +267,7 @@ export async function startApp(): Promise<AppHandle> {
     }
 
     try {
-      await mainRunner.stop();
+      await stopMain();
     } catch (err) {
       log.warn({ err }, 'failed to stop main bot');
     }
@@ -216,6 +286,14 @@ export async function startApp(): Promise<AppHandle> {
       }
     }
 
+    if (webhookServer) {
+      try {
+        await webhookServer.stop();
+      } catch (err) {
+        log.warn({ err }, 'failed to stop webhook server');
+      }
+    }
+
     try {
       closeDatabase();
     } catch (err) {
@@ -229,18 +307,18 @@ export async function startApp(): Promise<AppHandle> {
     setImmediate(() => process.exit(code));
   };
 
-  // Watch the main runner's `task()` promise. It resolves on a clean stop
-  // and rejects on a fatal polling error (auth revoked, exhausted retries,
-  // etc.). Without this, a dead runner would silently leave the process
-  // alive; the `shuttingDown` guard ensures we still only run shutdown once.
-  // The handle returns `undefined` when the runner isn't currently running,
-  // which it is at this point — but we guard for type-safety.
-  const mainTask = mainRunner.task();
-  if (mainTask) {
-    void mainTask.catch((err: unknown) => {
-      log.error({ err }, 'main bot runner died');
-      void shutdown('mainRunner.died');
-    });
+  // Long-poll mode only: watch the runner's `task()` promise. It resolves on
+  // a clean stop and rejects on a fatal polling error (auth revoked, exhausted
+  // retries, etc.). In webhook mode there is no runner — Telegram POSTs in
+  // and the Hono server's lifecycle is what we care about.
+  if (mainRunner) {
+    const mainTask = mainRunner.task();
+    if (mainTask) {
+      void mainTask.catch((err: unknown) => {
+        log.error({ err }, 'main bot runner died');
+        void shutdown('mainRunner.died');
+      });
+    }
   }
 
   process.once('SIGINT', () => void shutdown('SIGINT'));

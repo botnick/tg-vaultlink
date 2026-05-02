@@ -23,6 +23,7 @@ import { createBot } from './createBot.js';
 import { getLogger } from '../logger/logger.js';
 import { AppError } from '../utils/errors.js';
 import type { GetMeFn } from '../services/bot.service.js';
+import type { WebhookServer } from './webhookServer.js';
 
 type AllowedUpdate = Exclude<keyof Update, 'update_id'>;
 
@@ -32,11 +33,20 @@ export interface ChildBotManagerDeps {
   repos: AppRepos;
   /** `getMe` callback, used only when an add operation needs to resolve the bot identity. */
   getMeFn: GetMeFn;
+  /**
+   * When provided (i.e. `TELEGRAM_UPDATE_MODE=webhook`), every child bot is
+   * registered into this server and its updates flow over HTTP. Without it
+   * children fall back to long polling via @grammyjs/runner.
+   */
+  webhookServer?: WebhookServer;
 }
 
 interface RunningChild {
   bot: Bot<AppContext>;
-  handle: RunnerHandle;
+  /** Long-poll mode only — `null` for webhook-mode children. */
+  handle: RunnerHandle | null;
+  mode: 'long_poll' | 'webhook';
+  telegramBotId: string;
 }
 
 export class ChildBotManager {
@@ -87,6 +97,37 @@ export class ChildBotManager {
     grammyBot.use(sequentialize((ctx) => ctx.from?.id?.toString()));
 
     const allowedUpdates = [...this.deps.config.BOT_POLLING_ALLOWED_UPDATES] as AllowedUpdate[];
+    const mode: 'long_poll' | 'webhook' =
+      this.deps.config.TELEGRAM_UPDATE_MODE === 'webhook' && this.deps.webhookServer
+        ? 'webhook'
+        : 'long_poll';
+
+    if (mode === 'webhook' && this.deps.webhookServer) {
+      const secret = this.deps.config.WEBHOOK_SECRET_TOKEN || null;
+      try {
+        this.deps.webhookServer.register(record.telegram_bot_id, grammyBot, secret);
+        const url = `${this.deps.config.WEBHOOK_BASE_URL.replace(/\/+$/, '')}/webhook/${record.telegram_bot_id}`;
+        await grammyBot.api.setWebhook(url, {
+          ...(secret ? { secret_token: secret } : {}),
+          allowed_updates: allowedUpdates,
+          drop_pending_updates: false,
+        });
+      } catch (err) {
+        const msg = sanitizeError(err);
+        log.error({ username, err: msg }, 'failed to register child bot webhook');
+        this.deps.webhookServer.unregister(record.telegram_bot_id);
+        this.deps.services.bot.markErrored(record, msg);
+        return;
+      }
+      this.running.set(username, {
+        bot: grammyBot,
+        handle: null,
+        mode,
+        telegramBotId: record.telegram_bot_id,
+      });
+      log.info({ username }, 'child bot started');
+      return;
+    }
 
     let handle: RunnerHandle;
     try {
@@ -106,7 +147,12 @@ export class ChildBotManager {
       return;
     }
 
-    this.running.set(username, { bot: grammyBot, handle });
+    this.running.set(username, {
+      bot: grammyBot,
+      handle,
+      mode,
+      telegramBotId: record.telegram_bot_id,
+    });
     log.info({ username }, 'child bot started');
 
     // The runner exposes a `task()` promise that resolves when the polling
@@ -143,29 +189,43 @@ export class ChildBotManager {
     const child = this.running.get(username);
     if (!child) return;
     this.running.delete(username);
-    try {
-      await child.handle.stop();
-    } catch (err) {
-      getLogger().warn({ username, err }, 'error while stopping child bot');
-    }
+    await this.stopChild(child, username);
   }
 
   /** Stop every running child bot (best-effort). */
   async stopAll(): Promise<void> {
-    const log = getLogger();
     const usernames = [...this.running.keys()];
     await Promise.all(
       usernames.map(async (username) => {
         const child = this.running.get(username);
         this.running.delete(username);
         if (!child) return;
-        try {
-          await child.handle.stop();
-        } catch (err) {
-          log.warn({ username, err }, 'error while stopping child bot');
-        }
+        await this.stopChild(child, username);
       }),
     );
+  }
+
+  /** Internal: tear down a single child regardless of mode. */
+  private async stopChild(child: RunningChild, username: string): Promise<void> {
+    const log = getLogger();
+    if (child.mode === 'webhook') {
+      try {
+        await child.bot.api.deleteWebhook({ drop_pending_updates: false });
+      } catch (err) {
+        log.warn({ username, err }, 'error while deleting child bot webhook');
+      }
+      if (this.deps.webhookServer) {
+        this.deps.webhookServer.unregister(child.telegramBotId);
+      }
+      return;
+    }
+    if (child.handle) {
+      try {
+        await child.handle.stop();
+      } catch (err) {
+        log.warn({ username, err }, 'error while stopping child bot');
+      }
+    }
   }
 
   /**
