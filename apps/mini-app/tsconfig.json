@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "verbatimModuleSyntax": false,
+
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*", "src/**/*.json"],
+  "exclude": ["node_modules", "dist"]
+}

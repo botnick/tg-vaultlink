@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -------------------------------------------------------------------------- *
+ * Telegram theme variables.
+ *
+ * `:root` is the *light* fallback used when we render outside Telegram or
+ * before `themeParams` are applied. `[data-theme="dark"]` is set by
+ * `ThemeProvider` whenever `Telegram.WebApp.colorScheme === 'dark'`.
+ * Real values are then overwritten via `style.setProperty` so the live
+ * Telegram client's palette wins — these defaults only matter for the
+ * very first paint and the outside-Telegram guard screen.
+ * -------------------------------------------------------------------------- */
+:root {
+  --tg-bg: #ffffff;
+  --tg-text: #000000;
+  --tg-hint: #707579;
+  --tg-link: #2481cc;
+  --tg-button: #3390ec;
+  --tg-button-text: #ffffff;
+  --tg-secondary-bg: #f4f4f5;
+  --tg-section-bg: #ffffff;
+  --tg-header-bg: #ffffff;
+  --tg-accent-text: #1c8ee0;
+  --tg-destructive-text: #ff3b30;
+  --tg-subtitle-text: #707579;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+[data-theme='dark'] {
+  --tg-bg: #18222d;
+  --tg-text: #ffffff;
+  --tg-hint: #aaaaaa;
+  --tg-link: #62bcf9;
+  --tg-button: #62bcf9;
+  --tg-button-text: #ffffff;
+  --tg-secondary-bg: #232e3c;
+  --tg-section-bg: #18222d;
+  --tg-header-bg: #18222d;
+  --tg-accent-text: #62bcf9;
+  --tg-destructive-text: #ff5e57;
+  --tg-subtitle-text: #aaaaaa;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background: var(--tg-bg);
+  color: var(--tg-text);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+}
+
+[data-locale='th'] body {
+  font-family: 'IBM Plex Sans Thai', system-ui, sans-serif;
+}
+[data-locale='en'] body {
+  font-family: 'Roboto', system-ui, sans-serif;
+}
+
+/* Subtle list-item appearance. */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-up {
+  animation: fade-up 180ms ease-out both;
+}
+
+/* Bottom-sheet slide-in for ConfirmDialog. */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.sheet-up {
+  animation: sheet-up 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Press-down on tap for primary buttons. */
+.press-scale {
+  transition:
+    transform 80ms ease-out,
+    opacity 80ms ease-out;
+}
+.press-scale:active:not(:disabled) {
+  transform: scale(0.97);
+  opacity: 0.9;
+}
+
+/* Skeleton shimmer. */
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--tg-secondary-bg) 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    var(--tg-secondary-bg) 100%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Hide scrollbars on the bottom-tab nav while still allowing horizontal
+   overflow on small viewports. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}

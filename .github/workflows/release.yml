@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      - name: Compute version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.value }}"
+          awk -v v="$version" '
+            $0 ~ "^## \\["v"\\]" {flag=1; next}
+            flag && /^## \[/ {exit}
+            flag {print}
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "Release notes for v$version not found in CHANGELOG.md" >&2
+            exit 1
+          fi
+
+      - name: Pack tarball
+        run: |
+          mkdir -p artifact/src/db artifact/src/locales
+          cp -r dist artifact/dist
+          cp package.json pnpm-lock.yaml LICENSE artifact/
+          cp -r src/db/migrations artifact/src/db/migrations
+          cp src/locales/*.json artifact/src/locales/
+          tar -czf vaultlink-bot-${{ steps.version.outputs.value }}.tar.gz -C artifact .
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.value }}
+            ghcr.io/${{ github.repository }}:latest
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: vaultlink-bot-${{ steps.version.outputs.value }}.tar.gz
+          draft: false
+          prerelease: false

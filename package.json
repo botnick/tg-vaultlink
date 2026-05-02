@@ -1,0 +1,53 @@
+{
+  "name": "vaultlink-bot",
+  "version": "0.1.0",
+  "description": "Turn Telegram files into secure share codes you control.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:reset": "tsx src/db/migrate.ts --reset",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write \"**/*.{ts,js,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,js,json,md,yml,yaml}\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "docker:build": "docker build -t vaultlink-bot:local .",
+    "generate:key": "tsx scripts/generate-encryption-key.ts",
+    "healthcheck": "node dist/healthcheck.js"
+  },
+  "dependencies": {
+    "@grammyjs/auto-retry": "^2.0.2",
+    "@grammyjs/runner": "^2.0.3",
+    "@grammyjs/transformer-throttler": "^1.2.1",
+    "@hono/node-server": "^1.13.7",
+    "argon2": "^0.41.1",
+    "better-sqlite3": "^11.5.0",
+    "grammy": "^1.30.0",
+    "hono": "^4.6.10",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.9.0",
+    "@typescript-eslint/eslint-plugin": "^8.13.0",
+    "@typescript-eslint/parser": "^8.13.0",
+    "eslint": "^9.14.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

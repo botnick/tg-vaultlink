@@ -1,0 +1,16 @@
+/*
+ * VaultLink Mini App — font loading strategy.
+ *
+ * Font CSS is loaded dynamically from `VITE_FONT_PROVIDER_URL` in
+ * `src/main.tsx` (a `<link rel="stylesheet">` is injected before React
+ * mounts). This file is intentionally a single source of truth for the
+ * "what fonts do we use" question — it does NOT hardcode a CDN URL,
+ * because that would defeat the env-driven swap.
+ *
+ * If you need to add or remove a family:
+ *   1. Update the families list in `main.tsx`.
+ *   2. Update `tailwind.config.ts`'s `fontFamily.th` / `fontFamily.en`.
+ *   3. (Optional) extend the [data-locale] selector in `index.css`.
+ *
+ * Never sprinkle `@import url(...)` calls in component files.
+ */
