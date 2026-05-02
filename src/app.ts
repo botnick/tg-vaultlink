@@ -289,18 +289,15 @@ export async function startApp(): Promise<AppHandle> {
         clearTimeout(restartTimer);
         restartTimer = null;
       }
-      if (mainRunner) {
-        try {
-          await mainRunner.stop();
-        } catch (err) {
-          log.warn({ err }, 'failed to stop runner');
-        }
-      }
-      // Graceful release. Telegram's API contract: a getUpdates call with
-      // `offset=-1` is the "I'm done, forget any previous getUpdates" signal
-      // — per docs "All previous updates will be forgotten". When we have
-      // acked at least one update we pass `lastAckedUpdateId+1` instead so
-      // Telegram doesn't redeliver anything we already handled.
+      // Order matters: graceful release MUST run BEFORE runner.stop().
+      // The runner's .stop() awaits the in-flight getUpdates to return,
+      // which by default takes up to TELEGRAM_LONG_POLL_TIMEOUT_SECONDS
+      // (50 s). During that window the bot is still polling Telegram, so
+      // any restart attempt collides with us and gets 409. Sending a
+      // fresh getUpdates with offset=-1 (Telegram contract: "All previous
+      // updates will be forgotten") forces the in-flight request to
+      // return immediately, which makes runner.stop() return in
+      // milliseconds and frees the bot_id slot before we exit.
       try {
         await main.bot.api.getUpdates({
           offset: lastAckedUpdateId > 0 ? lastAckedUpdateId + 1 : -1,
@@ -310,6 +307,13 @@ export async function startApp(): Promise<AppHandle> {
       } catch {
         // Best-effort. If this fails the next-boot preflight still recovers
         // within TELEGRAM_LONG_POLL_TIMEOUT_SECONDS.
+      }
+      if (mainRunner) {
+        try {
+          await mainRunner.stop();
+        } catch (err) {
+          log.warn({ err }, 'failed to stop runner');
+        }
       }
     };
   }
