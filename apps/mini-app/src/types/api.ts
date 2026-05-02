@@ -21,7 +21,10 @@ export type Locale = 'th' | 'en';
 
 export interface FileSummary {
   id: number;
+  /** Bare base code; what the deep-link `?start=` query string carries. */
   code: string;
+  /** Canonical display form `botname:CODE_<n><L>` — what the user copies. */
+  share_code: string;
   file_type: FileType;
   file_name: string | null;
   size_bytes: number | null;
@@ -131,6 +134,8 @@ export interface AdminStats {
 export interface CollectionSummary {
   id: number;
   code: string;
+  /** Canonical display form `botname:CODE_<n>P_<m>V_<k>D` — what the user copies. */
+  share_code: string;
   bot_id: number;
   title: string | null;
   description: string | null;

@@ -39,6 +39,7 @@ import { hashPassword, verifyPassword, validatePasswordLength } from './password
 import { AppError, ErrorCode } from '../utils/errors.js';
 import { generateCode } from '../utils/codeGenerator.js';
 import { parseShareCode } from '../utils/codeParser.js';
+import { formatShareCode } from '../utils/shareCodeFormat.js';
 import { addDays, isExpired } from '../utils/date.js';
 import { truncate } from '../utils/safeText.js';
 import { t } from '../utils/i18n.js';
@@ -360,7 +361,10 @@ export class ShareService {
       },
     });
 
-    const shareCode = `${bot.username}_${finalRow.code}`;
+    // Type-count suffix is sourced from the freshly-inserted items so the
+    // displayed code matches reality (e.g. `mybot:ABC_5P_1V_1D`).
+    const counts = this.collections.countItemsByType(finalRow.id);
+    const shareCode = formatShareCode(bot.username, finalRow.code, counts);
     const deepLink = `${this.config.TELEGRAM_DEEP_LINK_BASE}/${bot.username}?start=${finalRow.code}`;
     return { collection: finalRow, shareCode, deepLink };
   }
@@ -419,13 +423,21 @@ export class ShareService {
 
   /**
    * Validate a collection access attempt (locked / deleted / expired /
-   * password). Mirrors the gate logic on {@link FileService.decode} so the
-   * bot router can branch identically. Returns the (possibly password-passed)
-   * collection. Throws on any failure.
+   * password / visibility). Mirrors the gate logic on
+   * {@link FileService.decode} so the bot router can branch identically.
+   * Returns the (possibly password-passed) collection. Throws on failure.
+   *
+   * Visibility policy: a `private` collection is only accessible to its
+   * owner (and admins). Everyone else gets the same `FILE_NOT_AVAILABLE`
+   * error a deleted row would produce — that way private codes don't
+   * disclose their existence to outsiders. When `actor` is omitted the
+   * visibility gate is skipped (used by internal flows that have already
+   * authorised the caller).
    */
   async ensureAccessible(input: {
     collection: CollectionRow;
     password?: string | null;
+    actor?: UserRow;
   }): Promise<CollectionRow> {
     const c = input.collection;
     if (c.is_deleted === 1) {
@@ -436,6 +448,15 @@ export class ShareService {
     }
     if (isExpired(c.expires_at)) {
       throw new AppError(ErrorCode.FILE_EXPIRED, 'expired', { expose: true });
+    }
+    if (input.actor && c.visibility === 'private') {
+      const isOwner = c.owner_user_id === input.actor.id;
+      const isAdmin =
+        input.actor.role === 'super_admin' ||
+        this.config.ADMIN_IDS.includes(input.actor.telegram_user_id);
+      if (!isOwner && !isAdmin) {
+        throw new AppError(ErrorCode.FILE_NOT_AVAILABLE, 'not available', { expose: true });
+      }
     }
     if (c.password_hash !== null) {
       const supplied = input.password ?? '';

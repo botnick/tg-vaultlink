@@ -138,7 +138,7 @@ export function MyFiles(): JSX.Element {
                         <p className="truncate font-semibold text-tg-text">{fileLabel(f)}</p>
                       </div>
                       <p className="mt-0.5 truncate text-xs text-tg-subtitle-text">
-                        <code className="font-mono">{f.code}</code>
+                        <code className="font-mono">{f.share_code}</code>
                         {' · '}
                         {formatBytes(f.size_bytes)}
                         {' · '}

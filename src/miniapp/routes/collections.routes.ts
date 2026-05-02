@@ -26,6 +26,7 @@ import type {
   FileVisibility,
 } from '../../types/index.js';
 import { AppError, ErrorCode } from '../../utils/errors.js';
+import { formatShareCode } from '../../utils/shareCodeFormat.js';
 
 export interface CollectionsRouteDeps {
   config: Config;
@@ -48,6 +49,8 @@ function clampInt(raw: string | undefined, fallback: number, min: number, max: n
 interface CollectionSummaryDto {
   id: number;
   code: string;
+  /** Canonical display form `botname:CODE_<n>P_<m>V_<k>D` — what the user copies. */
+  share_code: string;
   bot_id: number;
   title: string | null;
   description: string | null;
@@ -78,10 +81,23 @@ interface CollectionDetailDto extends CollectionSummaryDto {
   counts_by_type: Partial<Record<FileType, number>>;
 }
 
-function toSummary(row: CollectionRow): CollectionSummaryDto {
+/**
+ * Resolve the canonical `botname:CODE_<n>P_<m>V_<k>D` form for a collection
+ * row, looking up the owning bot to get its username and counting items by
+ * type. Falls back to the bare code if either lookup somehow misses.
+ */
+function shareCodeForCollection(repos: AppRepos, row: CollectionRow): string {
+  const bot = repos.bots.findById(row.bot_id);
+  if (!bot) return row.code;
+  const counts = repos.collections.countItemsByType(row.id);
+  return formatShareCode(bot.username, row.code, counts);
+}
+
+function toSummary(repos: AppRepos, row: CollectionRow): CollectionSummaryDto {
   return {
     id: row.id,
     code: row.code,
+    share_code: shareCodeForCollection(repos, row),
     bot_id: row.bot_id,
     title: row.title,
     description: row.description,
@@ -154,7 +170,7 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
     const offset = clampInt(c.req.query('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
 
     const rows = services.share.listOwnerCollections(user, { limit, offset });
-    const items = rows.map(toSummary);
+    const items = rows.map((row) => toSummary(repos, row));
     // Mirror the list filter (active-only) so the paging UI doesn't render
     // ghost pages composed entirely of soft-deleted rows.
     const total = repos.collections.countActiveByOwner(user.id);
@@ -173,7 +189,7 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
       if (v > 0) counts_by_type[k as FileType] = v;
     }
     const detail: CollectionDetailDto = {
-      ...toSummary(row),
+      ...toSummary(repos, row),
       items,
       counts_by_type,
     };
@@ -221,7 +237,7 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
     }
     const updated = services.share.setMetadata(row, fields, c.var.user);
     c.header('Cache-Control', 'no-store');
-    return c.json({ data: toSummary(updated) });
+    return c.json({ data: toSummary(repos, updated) });
   });
 
   app.delete('/collections/:id', (c) => {
@@ -241,14 +257,14 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
     }
     const updated = await services.share.setPassword(row, body.password, c.var.user);
     c.header('Cache-Control', 'no-store');
-    return c.json({ data: toSummary(updated) });
+    return c.json({ data: toSummary(repos, updated) });
   });
 
   app.delete('/collections/:id/password', (c) => {
     const row = loadOwned(deps, c.var.user.id, c.var.isAdmin, c.req.param('id'));
     const updated = services.share.removePassword(row, c.var.user);
     c.header('Cache-Control', 'no-store');
-    return c.json({ data: toSummary(updated) });
+    return c.json({ data: toSummary(repos, updated) });
   });
 
   app.post('/collections/:id/expiry', async (c) => {
@@ -271,7 +287,7 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
     }
     const updated = services.share.setExpiry(row, days, c.var.user);
     c.header('Cache-Control', 'no-store');
-    return c.json({ data: toSummary(updated) });
+    return c.json({ data: toSummary(repos, updated) });
   });
 
   app.post('/collections/:id/visibility', async (c) => {
@@ -286,7 +302,7 @@ export function collectionsRoutes(deps: CollectionsRouteDeps): Hono<MiniAppEnv> 
     }
     const updated = services.share.setVisibility(row, body.visibility, c.var.user);
     c.header('Cache-Control', 'no-store');
-    return c.json({ data: toSummary(updated) });
+    return c.json({ data: toSummary(repos, updated) });
   });
 
   app.post('/collections/:id/items/reorder', async (c) => {

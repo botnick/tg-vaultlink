@@ -25,7 +25,10 @@ export function buildMainMenuKeyboard(ctx: AppContext): InlineKeyboard {
     .text(ctx.t('menu.settings'), 'menu:settings')
     .text(ctx.t('menu.help'), 'menu:help');
 
-  if (ctx.services.permission.isAdmin(ctx.user)) {
+  // Show the admin entry to anyone who has SOME moderation surface — system
+  // admins and bot owners alike. The handler itself adapts the menu body to
+  // the caller's role.
+  if (ctx.services.permission.isModerator(ctx.user)) {
     kb.row().text(ctx.t('menu.admin'), 'menu:admin');
   }
 
@@ -58,7 +61,7 @@ export function registerMainMenuRouter(composer: Composer<AppContext>): void {
   });
 
   composer.callbackQuery('menu:admin', async (ctx) => {
-    if (!ctx.services.permission.isAdmin(ctx.user)) {
+    if (!ctx.services.permission.isModerator(ctx.user)) {
       await ctx.answerCallbackQuery({ text: ctx.t('common.error.permission_denied') });
       return;
     }

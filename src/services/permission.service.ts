@@ -14,8 +14,15 @@
  */
 
 import type { Config } from '../config/env.js';
-import type { ManagedBotRow, UserRow, FileRow, BotPermissionType } from '../types/index.js';
+import type {
+  ManagedBotRow,
+  UserRow,
+  FileRow,
+  CollectionRow,
+  BotPermissionType,
+} from '../types/index.js';
 import type { PermissionRepository } from '../repositories/permission.repository.js';
+import type { BotRepository } from '../repositories/bot.repository.js';
 import type { UserService } from './user.service.js';
 
 export interface PermissionDecision {
@@ -32,17 +39,19 @@ function deny(reason: NonNullable<PermissionDecision['reason']>): PermissionDeci
 export class PermissionService {
   private readonly repo: PermissionRepository;
   private readonly userService: UserService;
-  // Held for forward-compat (feature toggles may reference config in future
-  // policy revisions); referenced once below to satisfy "noUnusedLocals" while
-  // keeping the constructor surface stable.
   private readonly config: Config;
+  private readonly bots: BotRepository;
 
-  constructor(repo: PermissionRepository, userService: UserService, config: Config) {
+  constructor(
+    repo: PermissionRepository,
+    userService: UserService,
+    config: Config,
+    bots: BotRepository,
+  ) {
     this.repo = repo;
     this.userService = userService;
     this.config = config;
-    // Touch the field so strict unused-property checks treat it as used.
-    void this.config;
+    this.bots = bots;
   }
 
   /** Is the user a system admin (super_admin role OR ADMIN_IDS bootstrap)? */
@@ -59,18 +68,15 @@ export class PermissionService {
 
     switch (bot.mode) {
       case 'main_public':
-        // Main public bot: anyone (non-banned) can upload.
-        return ALLOW;
-
       case 'personal_public': {
+        // Public mode (main bot AND any personal_public bot): anyone who
+        // isn't explicitly denied can upload. The bot owner can still
+        // ban specific abusers via `/deny <user_id>` or `/deny_upload`.
         if (isOwner) return ALLOW;
         if (this.has(bot.id, user.id, 'deny') || this.has(bot.id, user.id, 'deny_upload')) {
           return deny('denied');
         }
-        if (this.has(bot.id, user.id, 'allow_upload')) return ALLOW;
-        // Personal-public bots are publicly *downloadable* but uploads are
-        // gated to the owner + explicitly-permitted users.
-        return deny('mode_restricted');
+        return ALLOW;
       }
 
       case 'personal_private': {
@@ -130,6 +136,52 @@ export class PermissionService {
     if (this.isAdmin(user)) return ALLOW;
     if (bot.owner_user_id === user.id) return ALLOW;
     return deny('not_owner');
+  }
+
+  /**
+   * Can the user moderate (lock/unlock/delete) THIS file?
+   *
+   * Strictly more permissive than {@link canManageFile}: a bot owner can
+   * moderate any file on their bot even if someone else uploaded it. This
+   * gives the bot owner per-bot admin powers without leaking system-wide
+   * admin actions (ban, broadcast, cross-bot moderation).
+   *
+   * The bot lookup is done HERE — the caller passes the file row and we
+   * resolve `bot.owner_user_id` ourselves so a forged file_id can't
+   * sidestep the check.
+   */
+  canModerateFile(user: UserRow, file: FileRow): PermissionDecision {
+    if (this.isBanned(user)) return deny('banned');
+    if (this.isAdmin(user)) return ALLOW;
+    if (file.owner_user_id === user.id) return ALLOW;
+    const bot = this.bots.findById(file.bot_id);
+    if (bot && bot.owner_user_id === user.id) return ALLOW;
+    return deny('not_owner');
+  }
+
+  /** Same policy as {@link canModerateFile}, scoped to a Collection row. */
+  canModerateCollection(user: UserRow, collection: CollectionRow): PermissionDecision {
+    if (this.isBanned(user)) return deny('banned');
+    if (this.isAdmin(user)) return ALLOW;
+    if (collection.owner_user_id === user.id) return ALLOW;
+    const bot = this.bots.findById(collection.bot_id);
+    if (bot && bot.owner_user_id === user.id) return ALLOW;
+    return deny('not_owner');
+  }
+
+  /**
+   * Coarse "is this user a moderator of anything?" gate. True for system
+   * admins and for any user who currently owns at least one managed bot.
+   *
+   * This is the right check for the `/admin` menu entry point and for the
+   * top-level moderator middleware: actual per-action authorization still
+   * happens via {@link canModerateFile} / {@link canModerateCollection}
+   * inside the handler.
+   */
+  isModerator(user: UserRow): boolean {
+    if (this.isBanned(user)) return false;
+    if (this.isAdmin(user)) return true;
+    return this.bots.countByOwner(user.id) > 0;
   }
 
   private isBanned(user: UserRow): boolean {

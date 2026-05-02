@@ -149,7 +149,7 @@ export function MyCollections(): JSX.Element {
                         </p>
                       </div>
                       <p className="mt-0.5 truncate text-xs text-tg-subtitle-text">
-                        <code className="font-mono">{c.code}</code>
+                        <code className="font-mono">{c.share_code}</code>
                         {' · '}
                         {c.total_items} {t('collections.items_count')}
                       </p>

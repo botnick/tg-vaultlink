@@ -11,15 +11,21 @@ export function SkeletonCard({ lines = 2, className = '' }: Props): JSX.Element 
   return (
     <div
       className={[
-        'rounded-2xl bg-tg-section-bg shadow-sm border border-black/[0.04] dark:border-white/[0.06] p-4',
+        'rounded-3xl bg-tg-section-bg shadow-soft border border-black/[0.04] dark:border-white/[0.06] p-4',
         className,
       ].join(' ')}
     >
-      <div className="skeleton mb-3 h-4 w-2/3 rounded" />
-      {Array.from({ length: lines }).map((_, i) => (
+      <div className="flex items-center gap-3 mb-3">
+        <div className="skeleton h-12 w-12 rounded-2xl shrink-0" />
+        <div className="flex-1 space-y-2">
+          <div className="skeleton h-4 w-2/3 rounded-full" />
+          <div className="skeleton h-3 w-1/2 rounded-full" />
+        </div>
+      </div>
+      {Array.from({ length: Math.max(0, lines - 1) }).map((_, i) => (
         <div
           key={i}
-          className="skeleton mb-2 h-3 rounded last:mb-0"
+          className="skeleton mb-2 h-3 rounded-full last:mb-0"
           style={{ width: `${60 + ((i * 13) % 30)}%` }}
         />
       ))}

@@ -109,18 +109,23 @@ export function registerPermissionsRouter(composer: Composer<AppContext>): void 
     );
   });
 
-  composer.command('mode_public', async (ctx) => {
+  /**
+   * `/mode public|private` — single command replaces the legacy
+   * `/mode_public` and `/mode_private` aliases. With no argument the
+   * caller gets a usage hint.
+   */
+  composer.command('mode', async (ctx) => {
     if (!ensureOwnerOnPersonalBot(ctx)) return;
-    ctx.services.bot.setMode(ctx.bot, 'personal_public', ctx.user);
-    await ctx.reply(ctx.t('permission.mode_changed', { mode: ctx.t('permission.mode_public') }), {
-      parse_mode: 'HTML',
-    });
-  });
-
-  composer.command('mode_private', async (ctx) => {
-    if (!ensureOwnerOnPersonalBot(ctx)) return;
-    ctx.services.bot.setMode(ctx.bot, 'personal_private', ctx.user);
-    await ctx.reply(ctx.t('permission.mode_changed', { mode: ctx.t('permission.mode_private') }), {
+    const arg = (ctx.match ?? '').toString().trim().toLowerCase();
+    if (arg !== 'public' && arg !== 'private') {
+      await ctx.reply(ctx.t('permission.mode.usage'), { parse_mode: 'HTML' });
+      return;
+    }
+    const nextMode = arg === 'public' ? 'personal_public' : 'personal_private';
+    ctx.services.bot.setMode(ctx.bot, nextMode, ctx.user);
+    const modeLabel =
+      arg === 'public' ? ctx.t('permission.mode_public') : ctx.t('permission.mode_private');
+    await ctx.reply(ctx.t('permission.mode_changed', { mode: modeLabel }), {
       parse_mode: 'HTML',
     });
   });

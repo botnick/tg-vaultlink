@@ -16,3 +16,14 @@ coverage
 
 # Local Windows helper scripts — kept out of the repo.
 *.bat
+
+# Anthropic Claude Code session state — local-only, never committed.
+.claude/
+
+# Stale tsc -b emits inside the Mini App source tree. The Mini App's
+# `pnpm build` (tsc -b && vite build) historically dropped these next to
+# the .tsx originals and confused the bundler — keep them ignored so a
+# stray local build doesn't bloat the repo or shadow the source.
+apps/mini-app/src/**/*.js
+apps/mini-app/src/**/*.js.map
+apps/mini-app/src/**/*.d.ts

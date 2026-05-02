@@ -102,6 +102,14 @@ export function botsRoutes(deps: BotsRouteDeps): Hono<MiniAppEnv> {
     if (!bot) {
       throw new AppError(ErrorCode.BOT_NOT_FOUND, 'bot not found', { expose: true });
     }
+    // System's main bot is bootstrapped from MAIN_BOT_TOKEN and is NOT
+    // user-removable. Refuse here so the Mini App "Remove" affordance
+    // can never knock the system bot offline.
+    if (bot.mode === 'main_public') {
+      throw new AppError(ErrorCode.INVALID_INPUT, 'cannot remove the main system bot', {
+        expose: true,
+      });
+    }
     const decision = services.permission.canManageBot(c.var.user, bot);
     if (!decision.allowed) {
       throw new AppError(ErrorCode.PERMISSION_DENIED, 'not your bot', { expose: true });

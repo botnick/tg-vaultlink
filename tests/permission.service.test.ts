@@ -25,7 +25,7 @@ let perms: PermissionService;
 beforeEach(() => {
   env = buildTestEnv();
   users = new UserService(env.repos.users, env.config);
-  perms = new PermissionService(env.repos.permissions, users, env.config);
+  perms = new PermissionService(env.repos.permissions, users, env.config, env.repos.bots);
 });
 
 afterEach(() => {
@@ -115,14 +115,26 @@ describe('permission.service — personal_public mode', () => {
     expect(perms.canUpload(owner, bot).allowed).toBe(true);
   });
 
-  it('non-owner without allow_upload is mode_restricted on upload', () => {
+  it('non-owner can upload by default (personal_public is fully open)', () => {
+    // Policy update: personal_public bots match main_public — anyone who
+    // isn't explicitly denied can upload. Bot owners can still ban
+    // specific abusers via /deny or /deny_upload.
     const owner = seedUser(env.repos, '410');
     const stranger = seedUser(env.repos, '411');
     const bot = seedBot(env.repos, owner.id, 'personal_public');
 
-    expect(perms.canUpload(stranger, bot)).toEqual({
+    expect(perms.canUpload(stranger, bot).allowed).toBe(true);
+  });
+
+  it('non-owner with deny_upload is denied even on personal_public', () => {
+    const owner = seedUser(env.repos, '412');
+    const blocked = seedUser(env.repos, '413');
+    const bot = seedBot(env.repos, owner.id, 'personal_public');
+    env.repos.permissions.grant(bot.id, blocked.id, 'deny_upload');
+
+    expect(perms.canUpload(blocked, bot)).toEqual({
       allowed: false,
-      reason: 'mode_restricted',
+      reason: 'denied',
     });
   });
 
@@ -295,5 +307,137 @@ describe('permission.service — ManagedBotRow literal smoke', () => {
       status: 'active',
     } as unknown as ManagedBotRow;
     expect(perms.canUpload(owner, stub).allowed).toBe(true);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Bot-scoped moderation: a bot owner is an "admin of their own bot" but
+ * cannot reach across to other bots, and cannot escalate to system admin.
+ * -------------------------------------------------------------------------- */
+describe('permission.service — canModerateFile (cross-bot isolation)', () => {
+  it('allows the bot owner to moderate any file ON THEIR BOT', () => {
+    const ownerA = seedUser(env.repos, '900');
+    const stranger = seedUser(env.repos, '901');
+    const botA = seedBot(env.repos, ownerA.id, 'main_public');
+    // File on botA uploaded by `stranger` (not the bot owner).
+    const file = env.repos.files.insert({
+      code: 'AAABBB23456X',
+      bot_id: botA.id,
+      owner_user_id: stranger.id,
+      telegram_file_id: 'tg-1',
+      telegram_file_unique_id: null,
+      file_type: 'document',
+      file_name: null,
+      mime_type: null,
+      size_bytes: 1,
+      caption: null,
+      visibility: 'public',
+      password_hash: null,
+      expires_at: null,
+    });
+    expect(perms.canModerateFile(ownerA, file).allowed).toBe(true);
+  });
+
+  it('REFUSES a bot owner trying to moderate a file on a DIFFERENT bot', () => {
+    const ownerA = seedUser(env.repos, '910');
+    const ownerB = seedUser(env.repos, '911');
+    const botB = seedBot(env.repos, ownerB.id, 'personal_public', { username: 'bbbbbbbot' });
+    const fileOnB = env.repos.files.insert({
+      code: 'CCCDDD23456X',
+      bot_id: botB.id,
+      owner_user_id: ownerB.id,
+      telegram_file_id: 'tg-2',
+      telegram_file_unique_id: null,
+      file_type: 'document',
+      file_name: null,
+      mime_type: null,
+      size_bytes: 1,
+      caption: null,
+      visibility: 'public',
+      password_hash: null,
+      expires_at: null,
+    });
+    // ownerA owns no relevant bot here; the gate must say 'not_owner'.
+    const decision = perms.canModerateFile(ownerA, fileOnB);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('not_owner');
+  });
+
+  it('always allows a super_admin regardless of which bot the file lives on', () => {
+    const ownerB = seedUser(env.repos, '920');
+    const sysAdmin = seedUser(env.repos, '921', 'super_admin');
+    const botB = seedBot(env.repos, ownerB.id, 'personal_private', { username: 'aaaaaabot' });
+    const file = env.repos.files.insert({
+      code: 'EEEFFF23456X',
+      bot_id: botB.id,
+      owner_user_id: ownerB.id,
+      telegram_file_id: 'tg-3',
+      telegram_file_unique_id: null,
+      file_type: 'document',
+      file_name: null,
+      mime_type: null,
+      size_bytes: 1,
+      caption: null,
+      visibility: 'public',
+      password_hash: null,
+      expires_at: null,
+    });
+    expect(perms.canModerateFile(sysAdmin, file).allowed).toBe(true);
+  });
+
+  it('denies banned users even when they own the bot the file lives on', () => {
+    const banned = seedUser(env.repos, '930', 'user', true);
+    const bot = seedBot(env.repos, banned.id, 'main_public');
+    const file = env.repos.files.insert({
+      code: 'GGGHHH23456X',
+      bot_id: bot.id,
+      owner_user_id: banned.id,
+      telegram_file_id: 'tg-4',
+      telegram_file_unique_id: null,
+      file_type: 'document',
+      file_name: null,
+      mime_type: null,
+      size_bytes: 1,
+      caption: null,
+      visibility: 'public',
+      password_hash: null,
+      expires_at: null,
+    });
+    const decision = perms.canModerateFile(banned, file);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('banned');
+  });
+});
+
+describe('permission.service — isModerator', () => {
+  it('returns true for super_admin', () => {
+    const sysAdmin = seedUser(env.repos, '940', 'super_admin');
+    expect(perms.isModerator(sysAdmin)).toBe(true);
+  });
+
+  it('returns true for users who own at least one managed bot', () => {
+    const owner = seedUser(env.repos, '950');
+    seedBot(env.repos, owner.id, 'personal_public');
+    expect(perms.isModerator(owner)).toBe(true);
+  });
+
+  it('returns false for plain users with no bots', () => {
+    const plain = seedUser(env.repos, '960');
+    expect(perms.isModerator(plain)).toBe(false);
+  });
+
+  it('returns false for banned users even if they own a bot', () => {
+    const banned = seedUser(env.repos, '970', 'user', true);
+    seedBot(env.repos, banned.id, 'personal_public');
+    expect(perms.isModerator(banned)).toBe(false);
+  });
+
+  it('does NOT mutate the caller into super_admin', () => {
+    // Sanity check: nothing in the moderator gate should escalate role.
+    const owner = seedUser(env.repos, '980');
+    seedBot(env.repos, owner.id, 'personal_public');
+    perms.isModerator(owner);
+    const refreshed = env.repos.users.findById(owner.id);
+    expect(refreshed?.role).toBe('user');
   });
 });

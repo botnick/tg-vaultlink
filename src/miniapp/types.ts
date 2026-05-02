@@ -68,7 +68,10 @@ export interface AppRepos {
 /** Trimmed file row for list responses (omits secrets + internal handles). */
 export interface FileSummaryDto {
   id: number;
+  /** Bare base code (lookup key). Kept for backward compat. */
   code: string;
+  /** Canonical display form `botname:CODE_<n><L>` — what the user copies. */
+  share_code: string;
   file_type: string;
   file_name: string | null;
   size_bytes: number | null;

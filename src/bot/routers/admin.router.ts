@@ -4,12 +4,34 @@
  * Provides moderation actions (ban/unban, lock/unlock, force-delete file),
  * read-only stats (`/admin_stats`, `/admin_reports`, `/admin_bots`), and an
  * optional broadcast that is gated on `config.ENABLE_ADMIN_BROADCAST`.
+ *
+ * IMPORTANT: the admin guard is attached PER-COMMAND via
+ * `composer.command(name, guard, handler)` rather than as a global
+ * `composer.use(guard)` at the top of this router. Installing the guard
+ * globally would block every subsequent middleware in the parent composer
+ * (decode router, etc.) for non-admin users — which previously caused the
+ * "you do not have permission to use this command" reply on plain-text
+ * share-code lookups.
  */
 
 import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context.js';
 import { adminOnlyMiddleware } from '../middlewares/adminOnly.middleware.js';
+import { botModeratorMiddleware } from '../middlewares/botModerator.middleware.js';
 import { escapeHtml } from '../../utils/safeText.js';
+import { formatSingleFileShareCode } from '../../utils/shareCodeFormat.js';
+import type { FileRow } from '../../types/index.js';
+
+/**
+ * Render a file as the canonical `botname:CODE_<n><L>` form so admin replies
+ * carry a code that can be pasted right back into the decoder. Falls back to
+ * the bare code if the owning bot row is somehow missing.
+ */
+function shareCodeFor(ctx: AppContext, file: FileRow): string {
+  const bot = ctx.repos.bots.findById(file.bot_id);
+  if (!bot) return file.code;
+  return formatSingleFileShareCode(bot.username, file.code, file.file_type);
+}
 
 const NUMERIC_RE = /^\d+$/;
 const REPORTS_PAGE_SIZE = 10;
@@ -21,15 +43,40 @@ function parsePage(raw: string): number {
 }
 
 export function registerAdminRouter(composer: Composer<AppContext>): void {
-  // Build a sub-composer that gates everything below on admin role.
-  const admin = composer.use(adminOnlyMiddleware());
+  // Two scoped gates, attached PER-COMMAND so they never leak to other
+  // routers' middleware chains:
+  //
+  //   superAdmin  — only `super_admin` role / ADMIN_IDS.
+  //                 System-wide actions: ban/unban, broadcast, system stats,
+  //                 cross-bot listing, the admin Mini-App dashboard.
+  //
+  //   moderator   — super admin OR owner of any managed bot.
+  //                 Per-bot moderation: lock/unlock/delete files,
+  //                 the `/admin_reports` queue (filtered to their bots),
+  //                 and the `/admin` menu entry point.
+  //
+  //   Per-action authorization (e.g. "this file lives on a bot you own")
+  //   happens INSIDE the handler via `permission.canModerateFile()` so a
+  //   bot owner can never reach across to another bot's content.
+  const superAdmin = adminOnlyMiddleware();
+  const moderator = botModeratorMiddleware();
 
-  // /admin — menu (with optional Mini App link)
-  admin.command('admin', async (ctx) => {
+  const sa = {
+    command: (name: string, handler: Parameters<typeof composer.command>[1]) =>
+      composer.command(name, superAdmin, handler),
+  };
+  const mod = {
+    command: (name: string, handler: Parameters<typeof composer.command>[1]) =>
+      composer.command(name, moderator, handler),
+  };
+
+  // /admin — menu (with optional Mini App link). Open to moderators; the
+  // body adapts to the caller's role.
+  mod.command('admin', async (ctx) => {
     await handleAdminCommand(ctx);
   });
 
-  admin.command('admin_stats', async (ctx) => {
+  sa.command('admin_stats', async (ctx) => {
     const users = ctx.repos.users.countAll();
     const files = ctx.repos.files.countAll();
     const bots = ctx.repos.bots.countAll();
@@ -45,10 +92,23 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
     );
   });
 
-  admin.command('admin_reports', async (ctx) => {
+  mod.command('admin_reports', async (ctx) => {
     const page = parsePage((ctx.match ?? '').toString());
     const offset = (page - 1) * REPORTS_PAGE_SIZE;
-    const reports = ctx.services.report.listPending(REPORTS_PAGE_SIZE, offset);
+
+    // Cross-bot isolation: super admin sees every pending report; a bot
+    // owner only sees reports against files on bots THEY OWN. Bot list is
+    // resolved server-side from the actor's user id — never trusted from
+    // input — so a bot owner can't probe another owner's queue.
+    const isSuper = ctx.services.permission.isAdmin(ctx.user);
+    let reports;
+    if (isSuper) {
+      reports = ctx.services.report.listPending(REPORTS_PAGE_SIZE, offset);
+    } else {
+      const ownedBotIds = ctx.repos.bots.listByOwner(ctx.user.id).map((b) => b.id);
+      reports = ctx.services.report.listPendingForBots(ownedBotIds, REPORTS_PAGE_SIZE, offset);
+    }
+
     if (reports.length === 0) {
       await ctx.reply(ctx.t('admin.reports.empty'), { parse_mode: 'HTML' });
       return;
@@ -56,10 +116,11 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
     const lines = [ctx.t('admin.reports.header')];
     for (const r of reports) {
       const file = r.file_id !== null ? ctx.repos.files.findById(r.file_id) : undefined;
+      const codeDisplay = file ? shareCodeFor(ctx, file) : '—';
       lines.push(
         ctx.t('admin.reports.item', {
           id: r.id,
-          code: escapeHtml(file?.code ?? '—'),
+          code: escapeHtml(codeDisplay),
           status: escapeHtml(r.status),
           reason: escapeHtml(r.reason),
         }),
@@ -68,7 +129,7 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
     await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
   });
 
-  admin.command('admin_bots', async (ctx) => {
+  sa.command('admin_bots', async (ctx) => {
     const page = parsePage((ctx.match ?? '').toString());
     const offset = (page - 1) * BOTS_PAGE_SIZE;
     const bots = ctx.repos.bots.listAll({ limit: BOTS_PAGE_SIZE, offset });
@@ -88,7 +149,7 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
     await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
   });
 
-  admin.command('ban', async (ctx) => {
+  sa.command('ban', async (ctx) => {
     const arg = (ctx.match ?? '').toString().trim();
     const firstSpace = arg.search(/\s+/);
     const idStr = firstSpace === -1 ? arg : arg.slice(0, firstSpace);
@@ -111,7 +172,7 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
     await ctx.reply(ctx.t('admin.ban.success', { userId: idStr }), { parse_mode: 'HTML' });
   });
 
-  admin.command('unban', async (ctx) => {
+  sa.command('unban', async (ctx) => {
     const idStr = (ctx.match ?? '').toString().trim();
     if (!NUMERIC_RE.test(idStr)) {
       await ctx.reply(ctx.t('admin.unban.usage'), { parse_mode: 'HTML' });
@@ -131,67 +192,80 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
     await ctx.reply(ctx.t('admin.unban.success', { userId: idStr }), { parse_mode: 'HTML' });
   });
 
-  async function adminFileLookup(
+  /**
+   * Resolve a `<bot:code>` / `<code>` argument and authorize the caller to
+   * moderate it. Returns `null` (and replies to the user) when the file is
+   * missing OR the caller has no authority on its bot. Centralised here so
+   * every moderation command shares the same security gate.
+   */
+  async function resolveModerableFile(
     ctx: AppContext,
     arg: string,
   ): Promise<import('../../types/index.js').FileRow | null> {
     const code = arg.includes(':') ? (arg.split(':').pop() ?? '') : arg;
-    if (!code) return null;
-    return ctx.repos.files.findByCodeAcrossBots(code) ?? null;
+    if (!code) {
+      await ctx.reply(ctx.t('files.not_found', { code: escapeHtml(arg) }), { parse_mode: 'HTML' });
+      return null;
+    }
+    const file = ctx.repos.files.findByCodeAcrossBots(code);
+    if (!file) {
+      await ctx.reply(ctx.t('files.not_found', { code: escapeHtml(arg) }), { parse_mode: 'HTML' });
+      return null;
+    }
+    const decision = ctx.services.permission.canModerateFile(ctx.user, file);
+    if (!decision.allowed) {
+      // Treat unauthorised lookups as "not found" so a non-admin bot owner
+      // can't probe code-existence on bots they don't own.
+      await ctx.reply(ctx.t('files.not_found', { code: escapeHtml(arg) }), { parse_mode: 'HTML' });
+      return null;
+    }
+    return file;
   }
 
-  admin.command('lock_file', async (ctx) => {
+  mod.command('lock_file', async (ctx) => {
     const arg = (ctx.match ?? '').toString().trim();
     if (arg.length === 0) {
       await ctx.reply(ctx.t('admin.lock.usage'), { parse_mode: 'HTML' });
       return;
     }
-    const file = await adminFileLookup(ctx, arg);
-    if (!file) {
-      await ctx.reply(ctx.t('files.not_found', { code: escapeHtml(arg) }), { parse_mode: 'HTML' });
-      return;
-    }
+    const file = await resolveModerableFile(ctx, arg);
+    if (!file) return;
     ctx.services.file.setLocked(file, true, ctx.user);
-    await ctx.reply(ctx.t('admin.lock.success', { code: escapeHtml(file.code) }), {
+    await ctx.reply(ctx.t('admin.lock.success', { code: escapeHtml(shareCodeFor(ctx, file)) }), {
       parse_mode: 'HTML',
     });
   });
 
-  admin.command('unlock_file', async (ctx) => {
+  mod.command('unlock_file', async (ctx) => {
     const arg = (ctx.match ?? '').toString().trim();
     if (arg.length === 0) {
       await ctx.reply(ctx.t('admin.unlock.usage'), { parse_mode: 'HTML' });
       return;
     }
-    const file = await adminFileLookup(ctx, arg);
-    if (!file) {
-      await ctx.reply(ctx.t('files.not_found', { code: escapeHtml(arg) }), { parse_mode: 'HTML' });
-      return;
-    }
+    const file = await resolveModerableFile(ctx, arg);
+    if (!file) return;
     ctx.services.file.setLocked(file, false, ctx.user);
-    await ctx.reply(ctx.t('admin.unlock.success', { code: escapeHtml(file.code) }), {
+    await ctx.reply(ctx.t('admin.unlock.success', { code: escapeHtml(shareCodeFor(ctx, file)) }), {
       parse_mode: 'HTML',
     });
   });
 
-  admin.command('delete_file', async (ctx) => {
+  mod.command('delete_file', async (ctx) => {
     const arg = (ctx.match ?? '').toString().trim();
     if (arg.length === 0) {
       await ctx.reply(ctx.t('admin.delete.usage'), { parse_mode: 'HTML' });
       return;
     }
-    const file = await adminFileLookup(ctx, arg);
-    if (!file) {
-      await ctx.reply(ctx.t('files.not_found', { code: escapeHtml(arg) }), { parse_mode: 'HTML' });
-      return;
-    }
+    const file = await resolveModerableFile(ctx, arg);
+    if (!file) return;
+    const before = shareCodeFor(ctx, file);
     ctx.services.file.softDelete(file, ctx.user);
-    await ctx.reply(ctx.t('admin.delete.success', { code: escapeHtml(file.code) }), {
+    await ctx.reply(ctx.t('admin.delete.success', { code: escapeHtml(before) }), {
       parse_mode: 'HTML',
     });
   });
 
-  admin.command('broadcast', async (ctx) => {
+  sa.command('broadcast', async (ctx) => {
     if (!ctx.config.ENABLE_ADMIN_BROADCAST) {
       await ctx.reply(ctx.t('admin.broadcast.disabled'));
       return;
@@ -232,30 +306,39 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
     });
   });
 
-  // /admin_dashboard — Mini App entry; if disabled, fall through to the
-  // settings router which renders a feature_disabled reply.
-  admin.command('admin_dashboard', async (ctx) => {
-    if (!ctx.config.ENABLE_MINI_APP || ctx.config.MINI_APP_URL.length === 0) {
-      await ctx.reply(ctx.t('common.error.feature_disabled'));
-      return;
-    }
-    const url = `${ctx.config.MINI_APP_URL.replace(/\/+$/, '')}/admin`;
-    const kb = new InlineKeyboard().webApp(ctx.t('admin.dashboard_button'), url);
-    await ctx.reply(ctx.t('miniapp.dashboard_caption'), { reply_markup: kb });
-  });
+  // The legacy `/admin_dashboard` command was removed in the Tier-A UX
+  // simplification; the Mini-App link is now reachable via the WebApp button
+  // on `/admin` itself (`handleAdminCommand`).
 }
 
 /**
  * Re-usable `/admin` body. Exposed so the main-menu router can re-dispatch
- * from `menu:admin`. Permission gating is the caller's responsibility — the
- * `/admin` command path itself is wrapped in {@link adminOnlyMiddleware}, but
- * the callback path checks `permission.isAdmin` before forwarding here.
+ * from `menu:admin`. The body adapts to the caller's role:
+ *   - super admin: full menu with system-wide actions
+ *   - bot owner only: per-bot moderation surface only
+ *
+ * Callers MUST gate access (the slash-command path is wrapped in the
+ * moderator middleware; the callback path re-checks `isModerator` before
+ * forwarding here) — this function trusts that the caller is at least a
+ * moderator and only differentiates super-admin extras.
  */
 export async function handleAdminCommand(ctx: AppContext): Promise<void> {
+  const isSuper = ctx.services.permission.isAdmin(ctx.user);
+
+  const sections: string[] = [ctx.t('admin.menu')];
+  sections.push('');
+  sections.push(ctx.t('admin.menu_moderator'));
+  if (isSuper) {
+    sections.push('');
+    sections.push(ctx.t('admin.menu_super'));
+  }
+
   const opts: Parameters<typeof ctx.reply>[1] = { parse_mode: 'HTML' };
-  if (ctx.config.ENABLE_MINI_APP && ctx.config.MINI_APP_URL.length > 0) {
+  // Mini-App admin dashboard is super-admin-only — surface the button only
+  // to super admins to match the Mini App's own auth gate.
+  if (isSuper && ctx.config.ENABLE_MINI_APP && ctx.config.MINI_APP_URL.length > 0) {
     const url = `${ctx.config.MINI_APP_URL.replace(/\/+$/, '')}/admin`;
     opts.reply_markup = new InlineKeyboard().webApp(ctx.t('admin.dashboard_button'), url);
   }
-  await ctx.reply(ctx.t('admin.menu'), opts);
+  await ctx.reply(sections.join('\n'), opts);
 }

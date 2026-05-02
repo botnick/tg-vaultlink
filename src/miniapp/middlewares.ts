@@ -27,6 +27,8 @@ import { getLogger } from '../logger/logger.js';
 /** Hono variable typings exposed by the Mini App middlewares. */
 export interface MiniAppEnv {
   Variables: {
+    /** Short random id stamped onto every request for log correlation. */
+    reqId: string;
     initData: ParsedInitData;
     user: UserRow;
     isAdmin: boolean;

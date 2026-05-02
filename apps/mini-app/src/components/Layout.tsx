@@ -31,8 +31,14 @@ export function Layout({ title, back, hideNav = false, right, children }: Props)
     <div className="min-h-screen bg-tg-bg text-tg-text">
       <Header title={title} {...(back ? { back } : {})} {...(right ? { right } : {})} />
       <main
-        className="mx-auto max-w-md px-4 py-4"
-        style={{ paddingBottom: hideNav ? 'calc(1rem + var(--safe-bottom))' : '5.5rem' }}
+        className="mx-auto max-w-md px-4 py-4 animate-fade-in"
+        style={{
+          // Floating bottom-nav needs extra bottom padding so the last card
+          // isn't clipped behind it.
+          paddingBottom: hideNav
+            ? 'calc(1rem + var(--safe-bottom, 0px))'
+            : 'calc(6.25rem + var(--safe-bottom, 0px))',
+        }}
       >
         {children}
       </main>

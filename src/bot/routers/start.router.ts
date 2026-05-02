@@ -22,6 +22,7 @@ import { deliverFile } from './_delivery.js';
 import { sendCollectionPreview } from './collection.router.js';
 import { escapeHtml } from '../../utils/safeText.js';
 import { buildMainMenuKeyboard } from './main_menu.router.js';
+import { formatShareCode } from '../../utils/shareCodeFormat.js';
 
 export function registerStartRouter(composer: Composer<AppContext>): void {
   composer.command('start', async (ctx) => {
@@ -36,9 +37,9 @@ export function registerStartRouter(composer: Composer<AppContext>): void {
       return;
     }
 
-    // Deep-link argument: treat a bare code as `<thisBotUsername>_<code>` so
+    // Deep-link argument: treat a bare code as `<thisBotUsername>:<code>` so
     // the resolver knows which bot to consult.
-    const rawCode = isValidCode(arg) ? `${ctx.bot.username}_${arg}` : arg;
+    const rawCode = isValidCode(arg) ? `${ctx.bot.username}:${arg}` : arg;
 
     let resolved;
     try {
@@ -57,11 +58,15 @@ export function registerStartRouter(composer: Composer<AppContext>): void {
 
     if (resolved.type === 'collection') {
       try {
-        await ctx.services.share.ensureAccessible({ collection: resolved.collection });
+        await ctx.services.share.ensureAccessible({
+          collection: resolved.collection,
+          actor: ctx.user,
+        });
       } catch (err) {
         if (err instanceof AppError) {
           if (err.code === ErrorCode.PASSWORD_REQUIRED) {
-            const shareCode = `${ctx.bot.username}_${resolved.collection.code}`;
+            const counts = ctx.repos.collections.countItemsByType(resolved.collection.id);
+            const shareCode = formatShareCode(ctx.bot.username, resolved.collection.code, counts);
             await ctx.reply(
               ctx.t('decode.password_required', { shareCode: escapeHtml(shareCode) }),
               { parse_mode: 'HTML' },
@@ -94,7 +99,9 @@ export function registerStartRouter(composer: Composer<AppContext>): void {
       await deliverFile(ctx, result.file);
     } catch (err) {
       if (err instanceof AppError && err.code === ErrorCode.PASSWORD_REQUIRED) {
-        const shareCode = `${ctx.bot.username}_${isValidCode(arg) ? arg : arg}`;
+        // We don't know the file_type at this point without re-querying; show
+        // the un-suffixed canonical form as a fallback.
+        const shareCode = `${ctx.bot.username}:${arg}`;
         await ctx.reply(ctx.t('decode.password_required', { shareCode: escapeHtml(shareCode) }), {
           parse_mode: 'HTML',
         });

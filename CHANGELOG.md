@@ -7,15 +7,155 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-02
+
+### Changed (UX simplification — Tier A)
+
+- **BotFather menu trimmed to 4 commands**: `/start /help /files /settings`.
+  `/bots` and `/cancel` still work as hidden commands but are no longer
+  surfaced in the Telegram client's `/` picker for less first-time
+  cognitive load.
+- **Aliases dropped**: `/my_files`, `/my_bots`, `/revoke`, `/lang`,
+  `/dashboard`, `/admin_dashboard`. Replacements (`/files`, `/bots`,
+  `/del`, `/settings`, the in-page WebApp button) cover every flow.
+- **`/add_bot` is now a single command** that defaults to `personal_public`
+  (anyone can decode AND upload, just like the system's main bot). Owners
+  flip to private with `/mode private` later. The legacy `/add_bot_open`
+  was removed.
+- **`/mode public|private` replaces `/mode_public` and `/mode_private`** —
+  one command with a subcommand argument; usage hint surfaces when the
+  arg is missing.
+- **`/help` is now paginated tabs**: 📖 Overview, 📁 Files, 🤖 Bots,
+  🔧 Settings, and 🛡 Admin (visible only to moderators). Switching tabs
+  edits the same message in place so the chat doesn't accumulate stale
+  help bubbles. Each tab's body lists the commands relevant to that
+  surface in monospace blocks.
+- **Locale strings cleaned**: every `&lt;X&gt;` placeholder in usage hints
+  was rewritten as `[X]` so the rendered message looks like
+  `/del [CODE]` instead of the awkward escaped angle brackets.
+- **`/bots` and `/files` are flat**: one chat message per invocation —
+  list rows + pagination keyboard + Mini-App button. The previous
+  per-row inline keyboards (one extra message per item) are gone; per-item
+  management routes through slash commands or the Mini App.
+
+### Added (cross-bot moderation)
+
+- **Bot owners are now per-bot moderators.** Anyone who registered a bot
+  via `/add_bot` can `/lock_file`, `/unlock_file`, `/delete_file`, and
+  view `/admin_reports` — but ONLY for content on bots they own. Super
+  admins keep their cross-bot powers; new methods
+  `permission.canModerateFile`, `canModerateCollection`, and `isModerator`
+  enforce the gate. `/admin_reports` filters the queue at the SQL layer
+  (`SELECT … JOIN files WHERE bot_id IN (…)`) so a bot owner cannot see
+  another owner's reports.
+- **Confined `adminOnlyMiddleware`.** The previous global
+  `composer.use(adminOnlyMiddleware())` accidentally blocked every
+  subsequent middleware in the parent composer (decode router included)
+  for non-admins, surfacing as a "permission denied" reply to plain-text
+  share-code lookups. The middleware is now attached per-command via
+  `composer.command(name, guard, handler)`.
+- **`/admin` menu adapts to role**: bot owners see only the per-bot
+  moderation block; super admins see the additional system-wide block
+  (stats, ban/unban, broadcast).
+- **Main system bot is no longer removable.** `/remove_bot @main_bot`
+  and the Mini App `DELETE /bots/:id` both refuse when the row's mode
+  is `main_public`. The bootstrap re-seeds the main row every restart
+  anyway, but blocking the remove avoids a confusing "bot offline until
+  restart" gap.
+
+### Added (per-share visibility)
+
+- **`visibility = private` is now enforced at decode time.**
+  `share.ensureAccessible({ collection, actor })` and
+  `file.service.decode({ user })` both reject non-owner non-admin callers
+  with `FILE_NOT_AVAILABLE` (the same shape a deleted row produces) so
+  private codes don't leak existence. Public is still the default and
+  unchanged.
+
+### Added (Mini App polish — fintech card aesthetic)
+
+- **Brand palette + gradient utilities.** Tailwind config gains
+  `bg-gradient-hero` (indigo → violet → pink), `bg-gradient-mint`,
+  `bg-gradient-sunset`, and `bg-gradient-aurora` plus
+  `shadow-glow` / `shadow-glow-pink` / `shadow-glow-cyan` and brand
+  colour stops (`brand.indigo`, `brand.violet`, `brand.fuchsia`,
+  `brand.pink`, `brand.cyan`, `brand.teal`, `brand.amber`).
+- **Aurora-mesh hero**, `.glass` / `.glass-dark` surfaces with
+  `backdrop-filter`, and a one-shot `shine-sweep` overlay that wraps
+  primary buttons and the home hero. All animations respect
+  `prefers-reduced-motion`.
+- **Floating bottom-nav**: rounded glass pill above the safe-area, with
+  a brand-gradient indicator behind the active tab — replaces the flat
+  bottom bar.
+- **Card variants** (`default` / `glass` / `gradient` / `outline`)
+  with optional `accentGlow` (`violet` / `pink` / `cyan`).
+- **`Button` primary** is a gradient pill with glow + shine sweep +
+  haptic feedback; legacy flat style remains as `solid`.
+- **Skeleton + EmptyState refresh**: skeleton rows show an avatar
+  bubble + shimmer; empty states use a floating gradient bubble icon.
+- **Home redesign**: aurora-mesh hero card with stat tiles ("Files",
+  "Bots") in `glass-dark`, action grid below with per-tile gradient
+  icon bubbles. Stagger-animation cascade on first paint.
+- **`CopyButton` defaults to icon-only** (circular, 36×36, with
+  copy-success check-mark feedback). The text-pill variant is still
+  available via `<CopyButton variant="pill" …/>`.
+- **`share_code` field on every file/collection DTO**: Mini App now
+  shows the canonical `botname:CODE_<n><L>` form everywhere — the
+  recipient can copy it from a list view and paste it back into chat
+  without manually re-stitching the prefix.
+
+### Added (Mini App diagnostics)
+
+- **Per-request id** (`X-Request-Id` response header) stamped on every
+  Mini App API call. Every 4xx and 5xx response is logged with that id,
+  the path, status, and duration so a 500 can be matched 1-to-1 to its
+  server stack — the request id is also returned in the JSON body so
+  users can quote it in bug reports.
+
 ### Changed (UX)
 
-- **Share-code separator switched from `:` to `_`.** A share code is now
-  rendered and parsed as `botname_CODE` (e.g. `qqpptbot_RP2VHVE6AGRV`)
-  instead of `botname:CODE`. Telegram's auto-linker tends to mangle the
-  colon form into a (broken) deep link, so `_` round-trips cleanly through
-  copy-paste. Legacy `botname:CODE` strings are still accepted by the
-  parser, so previously-shared codes continue to resolve. Code allocation,
-  bot routing, audit, and Mini App displays all use the new form.
+- **Share code now carries a type-count suffix.** Codes display as
+  `botname:CODE_<n>P_<m>V_<k>D` (Photos / Videos / Documents — also
+  `A`udio, `W`(voice), `G`(animation), `S`(sticker)) so the recipient
+  sees what's behind a code at a glance. Single-file shares get
+  `_1P` / `_1V` / etc.; collections get the full breakdown
+  (e.g. `mybot:KQ7TG2X4NPM3_5P_1V_1D`). The base code on the deep link
+  is unchanged — `?start=KQ7TG2X4NPM3` still works — and the parser
+  strips the suffix before lookup.
+- **Separator restored to `:`.** Earlier in this Unreleased cycle we
+  briefly switched the bot/code separator to `_` to dodge Telegram's
+  auto-linker. With the new type-count suffix using `_` itself, `:`
+  is the cleanest separator and matches the original design. The parser
+  still accepts the brief `_` form for backward compatibility.
+- **Upload sessions replace per-message bundling.** One session per
+  `(bot, user)`, not per `media_group_id`. Any inbound media starts
+  or extends the session; consecutive uploads — Telegram album, separate
+  messages, or a mix — accumulate into one Collection draft. Rate limit
+  is one slot per session (a rejected first item drops a sentinel so
+  the rest of an in-flight album stays silent).
+- **Confirmation prompt before finalising.** After a 1.5 s pause the bot
+  posts (or edits) a "🛑 End adding?" prompt with live counts and a
+  single button to finalise. Sending more files extends the session and
+  refreshes the prompt; the button ships immediately. As a safety net
+  the session auto-finalises 5 min after the last upload so drafts
+  cannot stick. On finalise: 0 items → silent drop; 1 item with no
+  description → single-file share; 1 item with a description, or 2+
+  items → real Collection. The prompt message is deleted on close so
+  it doesn't pollute the chat.
+- **Text messages during a session become the collection description.**
+  While the upload session is open, any plain-text message from the
+  same user is captured as the description and shown in the next prompt
+  refresh. The decode router only sees text outside of a session. The
+  description appears alongside the share code in the final reply and
+  is persisted on the collection row.
+- **Collection preview now delivers real media.** Decoding a Collection
+  share code ships the actual files for the current page — photos and
+  videos in one Telegram media group, documents in their own group,
+  audios in theirs, and animations / voice / stickers individually.
+  A separate text + keyboard message follows with the page caption and
+  numbered pagination buttons (📗 for current, ❎ for others) plus a
+  "📂 send all remaining" shortcut that delivers pages from the
+  current+1 onward, capped at `MAX_BULK_SEND_ITEMS`.
 - **Less chatter, same gates.** The bot now stays quiet when nothing needs
   saying. Specifically:
   - Batch decode no longer posts a "Found N codes" banner or per-item
@@ -158,5 +298,6 @@ timeout=0)` so Telegram releases the long-poll session immediately
 - Standalone and Docker runtimes.
 - Auto build & release workflow on `v*` tags.
 
-[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.0
 [0.1.0]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.1.0

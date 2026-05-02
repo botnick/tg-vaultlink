@@ -65,6 +65,40 @@ export class ReportRepository {
     return this.listPendingStmt.all(limit, offset) as unknown as ReportRow[];
   }
 
+  /**
+   * Pending reports filtered to ONLY include reports against files whose
+   * `bot_id` is one of the supplied ids. Returns `[]` for an empty bot list
+   * — the SQL placeholders would otherwise be invalid. Used by the per-bot
+   * moderator view (`/admin_reports` for non-super-admin bot owners).
+   *
+   * The SQL is rebuilt per call because better-sqlite3 prepared statements
+   * cannot expand IN-list parameters; the cost is negligible for an
+   * admin-paged query.
+   */
+  listPendingForBots(botIds: number[], limit: number, offset: number): ReportRow[] {
+    if (botIds.length === 0) return [];
+    const placeholders = botIds.map(() => '?').join(',');
+    const sql = `SELECT r.* FROM reports r
+                 JOIN files f ON r.file_id = f.id
+                 WHERE r.status = 'pending'
+                   AND f.bot_id IN (${placeholders})
+                 ORDER BY r.created_at ASC
+                 LIMIT ? OFFSET ?`;
+    return this.db.prepare(sql).all(...botIds, limit, offset) as unknown as ReportRow[];
+  }
+
+  /** Count pending reports against files on the supplied bot ids. */
+  countPendingForBots(botIds: number[]): number {
+    if (botIds.length === 0) return 0;
+    const placeholders = botIds.map(() => '?').join(',');
+    const sql = `SELECT COUNT(*) AS n FROM reports r
+                 JOIN files f ON r.file_id = f.id
+                 WHERE r.status = 'pending'
+                   AND f.bot_id IN (${placeholders})`;
+    const row = this.db.prepare(sql).get(...botIds) as { n: number };
+    return row.n;
+  }
+
   listByStatus(status: ReportStatus, limit: number, offset: number): ReportRow[] {
     return this.listByStatusStmt.all(status, limit, offset) as unknown as ReportRow[];
   }

@@ -105,6 +105,21 @@ export class ReportService {
   }
 
   /**
+   * Pending reports against files on the given bot ids. Returns `[]` if no
+   * ids are supplied. Used by `/admin_reports` to scope a bot owner's
+   * inbox to their own bots — the caller is expected to have already
+   * resolved the owner's bot list and passed it in.
+   */
+  listPendingForBots(botIds: number[], limit: number, offset: number): ReportRow[] {
+    return this.reports.listPendingForBots(botIds, limit, offset);
+  }
+
+  /** Pending-report count scoped to the given bot ids. */
+  countPendingForBots(botIds: number[]): number {
+    return this.reports.countPendingForBots(botIds);
+  }
+
+  /**
    * Update the status of a report (typically `pending` → `reviewed`/
    * `dismissed`). The acting user is captured in the audit log.
    */

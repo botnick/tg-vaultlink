@@ -76,7 +76,7 @@ export async function startApp(): Promise<AppHandle> {
   const settings = new SettingsService(repos.settings);
   const user = new UserService(repos.users, config);
   const rateLimit = new RateLimitService(repos.rateLimit, config);
-  const permission = new PermissionService(repos.permissions, user, config);
+  const permission = new PermissionService(repos.permissions, user, config, repos.bots);
   const file = new FileService(repos.files, repos.bots, audit, config);
   const bot = new BotService(repos.bots, audit, config, defaultGetMeFn);
   const report = new ReportService(repos.reports, repos.files, audit, config);

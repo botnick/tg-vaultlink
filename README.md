@@ -12,19 +12,24 @@ VaultLink turns any file or media bundle uploaded through Telegram into a short,
 
 ## Features
 
-- Single-file or **collection** share codes, with paginated previews and rate-limited bulk send
-- Deep-link share via `https://t.me/<bot>?start=<code>`
-- Personal child bots: `/add_bot <TOKEN>` (private) or `/add_bot_open <TOKEN>` (public)
+- **Auto-bundle multi-uploads** — send several files (or a Telegram album) and the bot opens an upload session, accumulates everything into one Collection draft, and posts a "🛑 End adding?" prompt with live counts. One button → finalised share code; idle 5 min → auto-finalise. Send a plain-text message during the session to set the collection description.
+- **Type-count share codes** — codes display as `botname:CODE_3P_1V_1D` so the recipient can see what's behind the link at a glance (P/V/D = photos / videos / documents; A audio, W voice, G animation, S sticker). The deep link still uses the bare base code.
+- **Strict-prefix decode + batch paste** — only `botname:CODE` (or a `t.me/<bot>?start=CODE` deep link) is accepted in chat; bare codes are rejected. Paste many codes in one message and the bot delivers each in order with rate-respecting spacing.
+- **Per-bot moderator scope** — registering a bot via `/add_bot` makes you a moderator of that bot. You can `/lock_file`, `/unlock_file`, `/delete_file`, and view `/admin_reports` filtered to your own bots. System-wide actions (ban, broadcast) stay reserved for `ADMIN_IDS`.
+- **Per-share visibility** — `public` (default) is open to everyone the bot mode allows; `private` shares are visible only to the owner and admins. Switch via Mini App or service API.
+- **Personal bots** — `/add_bot <TOKEN>` registers a child bot (default mode = `personal_public`, anyone can decode + upload, just like the main bot). Owner flips to private with `/mode private` later.
 - AES-256-GCM encrypted bot tokens at rest
-- Per-user rate limits (upload, download, add_bot, report)
+- Per-user rate limits (upload, download, add_bot, report) — albums count as one upload event, not N
 - Optional file passwords (argon2id) and file expiry
-- Reports plus auto-lock at a configurable threshold
-- Telegram Mini App: Files, Bots, Settings, Admin Dashboard, Reports, Audit Logs
+- Reports plus auto-lock at a configurable threshold; bot owners triage reports on their own bots, super admins triage system-wide
+- **Telegram Mini App** with fintech-card aesthetic — aurora-mesh hero, glassmorphism stat tiles, gradient action grid, floating bottom-nav. Pages: Home, Files, Bots, Settings, Admin Dashboard, Reports, Audit Logs.
+- **Paginated `/help`** — tabbed (📖 / 📁 / 🤖 / 🔧 / 🛡 admin) with per-tab command reference; switching tabs edits the same chat message in place.
 - Bilingual UX (Thai default, English) — every user-visible string lives in locale JSON
 - Production-grade concurrency: throttler + auto-retry transformer + grammY runner with per-user serialization
 - **Two transport modes** — long polling (default, no public IP needed) or webhook (Telegram POSTs to a single Hono listener, optional `secret_token` header check); switch by editing `TELEGRAM_UPDATE_MODE` in `.env`
-- **Self-healing main bot row** — on every successful boot the encrypted token is re-synced from `.env`, `status` is reset to `active`, and `last_error` is cleared, so token regen / past 401s recover with `pnpm dev` instead of `db:reset`
+- **Self-healing main bot row** — on every successful boot the encrypted token is re-synced from `.env`, `status` is reset to `active`, and `last_error` is cleared. The main bot row is also un-removable (the slash command and the Mini App API both refuse).
 - **High-throughput SQLite tuning** out of the box (32 MB page cache, 128 MB mmap window, WAL auto-checkpoint at 1000 pages, `PRAGMA optimize` on close) — fits a 1 GB container while serving thousands of concurrent users
+- **Per-request logging** in the Mini App API — every response carries an `X-Request-Id` header that's also echoed in the JSON body, so a 500 can be matched 1-to-1 to its server-side stack.
 
 ## Requirements
 
@@ -205,39 +210,83 @@ The variables below are the complete set declared in `src/config/env.ts` and mir
 
 ## Commands
 
-The advertised public command surface is intentionally small. Legacy commands (`/my_files`, `/add_bot`, `/add_bot_open`, `/lock_file`, `/del`, `/set_password`, `/report`, etc.) remain registered as hidden aliases for power users.
+The advertised public command surface is intentionally tiny — only what a casual user needs from day one. Power-user commands (`/del`, `/set_password`, `/report`, `/add_bot`, `/lock_file`, `/admin`, etc.) are registered as hidden commands and surfaced through the paginated `/help` reference.
 
 ```
 /start    เปิดเมนูหลัก / Open main menu
-/help     วิธีใช้งาน / How to use
-/new      สร้างรหัสแชร์ / Create a share
+/help     วิธีใช้งาน / How to use (paginated tabs)
 /files    ไฟล์ของฉัน / My files
-/bots     บอทส่วนตัว / My bots
 /settings ตั้งค่า / Settings
-/cancel   ยกเลิก / Cancel
-/admin    Admin dashboard (admins only — registered per-chat)
 ```
 
-`/admin` is registered with a chat-scoped `setMyCommands` call against each `ADMIN_IDS` entry, so it appears in the client menu only for known administrators.
+`/admin` is registered with a chat-scoped `setMyCommands` call against each `ADMIN_IDS` entry so it appears in the client menu only for known super-admins. Bot owners reach the moderation surface through `/admin` (typed) and through the `🛡` tab inside `/help`.
+
+The full surface — by audience:
+
+| Audience           | Commands                                                                                                                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anyone             | `/start` `/help` `/files` `/bots` `/settings` `/cancel` `/del [CODE]` `/set_password [CODE] [pwd]` `/remove_password [CODE]` `/report [CODE] [reason]` `/terms` `/privacy` |
+| Personal bot owner | `/add_bot [BOT_TOKEN]` `/remove_bot @username` `/mode public\|private` `/allow [user_id]` `/deny [user_id]` `/allow_upload [user_id]` `/deny_upload [user_id]` `/stats`    |
+| Bot moderator      | `/admin` (menu) `/admin_reports` (reports on bots you own) `/lock_file [CODE]` `/unlock_file [CODE]` `/delete_file [CODE]`                                                 |
+| Super admin only   | `/admin_stats` `/admin_bots` `/ban [user_id]` `/unban [user_id]` `/broadcast [message]`                                                                                    |
 
 ## Personal bot feature
 
-VaultLink supports two flavours of "child bot":
+`/add_bot <TOKEN>` registers a child bot owned by the calling user. The default mode is `personal_public` — anyone can decode AND upload through it, just like the system's main bot. Owners can switch to private at any time:
 
-- `/add_bot <TOKEN>` — **private** mode. The added bot serves the owner only.
-- `/add_bot_open <TOKEN>` — **public** mode. The added bot accepts uploads from any Telegram user, subject to the same per-user rate limits and moderation rules as the main bot.
+```
+/mode private   # only owner + allowed users
+/mode public    # anyone (default)
+```
 
 Tokens are encrypted at rest with AES-256-GCM keyed by `TOKEN_ENCRYPTION_KEY` (a fresh random 12-byte nonce is generated per row, stored alongside the ciphertext and auth tag in `managed_bots`). Tokens are never written to disk in plaintext and are redacted from log output.
 
+The system's **main bot row is un-removable**: the slash `/remove_bot` and the Mini App `DELETE /bots/:id` both refuse when the bot is `mode='main_public'`. The bootstrap re-seeds the main row on every restart, so the only way to disable the main bot is to remove `MAIN_BOT_TOKEN` from `.env`.
+
 ## Collections
 
-A share code can resolve to either a single file or a **collection** of media items. Collections are assembled in a transient `collection_drafts` row (TTL governed by `COLLECTION_DRAFT_TTL_MINUTES`); on finish, the draft is snapshotted into `collections` and `collection_items` and a unique code is minted. The decode flow shows a paginated preview (controlled by `COLLECTION_PAGE_SIZE`) before any media is sent. Bulk send is opt-in, capped by `MAX_BULK_SEND_ITEMS`, and paced by `COLLECTION_SEND_DELAY_MS` to stay friendly to the Telegram throttler.
+A share code can resolve to either a single file or a **collection** of media items. Multi-uploads — albums, or several files sent within a few seconds — are bundled automatically: the bot opens a per-`(bot, user)` upload session, accumulates items, posts a "🛑 End adding?" prompt with live counts, and finalises when the user clicks the button (or after 5 min idle). Send a plain-text message during the session to set the description.
+
+The displayed share code carries a **type-count suffix** so the recipient sees the contents at a glance:
+
+```
+qqpptbot:KQ7TG2X4NPM3_5P_1V_1D
+                     └── 5 photos · 1 video · 1 document
+```
+
+Letters: `P`hoto, `V`ideo, `D`ocument, `A`udio, `W` voice, `G` animation, `S` sticker. The deep link uses the bare base code (`?start=KQ7TG2X4NPM3`).
+
+Decode flow: the bot delivers the actual media for the current page (photos and videos in one Telegram media group, documents in their own, audios in theirs, voice / animation / sticker individually) followed by a numbered pagination keyboard (📗 current, ❎ others) and a `📂 send all remaining` shortcut. Going to the last page produces a "fetch complete" message with the full share code repeated for easy copy.
 
 Code uniqueness is enforced **per bot, across both `files` and `collections` tables**: a code cannot collide between the two shapes for the same bot.
 
+## Per-share visibility
+
+Every file and collection has a `visibility` column with two values:
+
+- **`public`** (default) — anyone the bot mode allows can decode it.
+- **`private`** — only the uploader and admins can decode. Non-owner non-admin callers get the same `FILE_NOT_AVAILABLE` shape a deleted row would produce, so private codes don't disclose existence.
+
+Owners flip visibility through the Mini App detail page; the API call is `POST /api/v1/{files,collections}/:id/visibility` with `{ "visibility": "public" | "private" }`.
+
+## Bot moderator scope
+
+Anyone who owns at least one managed bot is a **moderator** of that bot. A moderator can:
+
+- `/lock_file [CODE]` / `/unlock_file [CODE]` — toggle the `is_locked` flag on a file uploaded to their bot
+- `/delete_file [CODE]` — soft-delete a file uploaded to their bot
+- `/admin_reports` — see pending reports filtered to files on bots they own
+- `/admin` — open the menu (the body adapts to role; bot owners see the moderation block, super admins additionally see the system-wide block)
+
+Cross-bot isolation is enforced at the database layer: `permission.canModerateFile(user, file)` resolves the file's `bot_id` server-side and checks whether the caller owns that bot — a moderator on bot A cannot reach files on bot B unless they're a system admin. Reports are filtered with a SQL `JOIN files WHERE bot_id IN (…)` so a bot owner cannot probe another owner's queue.
+
 ## Telegram Mini App
 
-When `ENABLE_MINI_APP=true`, the bot starts a Hono HTTP API server (port derived from `MINI_APP_API_BASE_URL`, defaulting to `8081`) and the in-bot commands `/dashboard`, `/files`, `/bots`, and `/admin_dashboard` render an inline keyboard with a `WebApp` button pointing at `MINI_APP_URL`. Authentication is **`Telegram.WebApp.initData` HMAC** verified server-side with constant-time compare and an `auth_date` freshness check; there are no browser cookies and no shared web sessions. CORS is allowlist-driven via `MINI_APP_ALLOWED_ORIGINS` — never `*`.
+When `ENABLE_MINI_APP=true`, the bot starts a Hono HTTP API server (port derived from `MINI_APP_API_BASE_URL`, defaulting to `8081`) and the `/start` greeting plus `/files`, `/bots`, `/settings`, and `/admin` render an inline keyboard with a `WebApp` button pointing at `MINI_APP_URL`. Authentication is **`Telegram.WebApp.initData` HMAC** verified server-side with constant-time compare and an `auth_date` freshness check; there are no browser cookies and no shared web sessions. CORS is allowlist-driven via `MINI_APP_ALLOWED_ORIGINS` — never `*`.
+
+The 0.2.0 frontend matches a fintech-card aesthetic: aurora-mesh hero, `glassmorphism` stat tiles, gradient action grid, floating bottom-nav with a brand-gradient indicator behind the active tab, icon-only copy buttons, and a paginated `/help` mirror. Animations respect `prefers-reduced-motion`.
+
+Diagnostics: every API response carries an `X-Request-Id` header — the same id is echoed in the JSON body and in every server log line (4xx and 5xx alike). Reproducing a 500 once produces enough information to pinpoint the route + stack on the next deploy.
 
 The frontend lives in `apps/mini-app/` with its own [README](apps/mini-app/README.md). It is a Vite + React + Tailwind app themed against `Telegram.WebApp.themeParams`.
 

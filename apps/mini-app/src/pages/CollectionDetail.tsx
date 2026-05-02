@@ -495,8 +495,13 @@ export function CollectionDetail(): JSX.Element {
               {t('file_detail.share_code')}
             </p>
             <div className="mt-1 flex items-center justify-between gap-2">
-              <code className="truncate font-mono text-sm text-tg-text">{collection.code}</code>
-              <CopyButton value={collection.code} label={t('collection_detail.copy_code')} />
+              <code className="truncate font-mono text-sm text-tg-text">
+                {collection.share_code}
+              </code>
+              <CopyButton
+                value={collection.share_code}
+                label={t('collection_detail.copy_code')}
+              />
             </div>
             <div className="mt-4">
               <p className="text-xs uppercase tracking-wider text-tg-hint">

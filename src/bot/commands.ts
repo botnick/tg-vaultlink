@@ -17,9 +17,7 @@ export const PUBLIC_BOT_COMMANDS: readonly BotCommand[] = [
   { command: 'start', description: 'เปิดเมนูหลัก / Open main menu' },
   { command: 'help', description: 'วิธีใช้งาน / How to use' },
   { command: 'files', description: 'ไฟล์ของฉัน / My files' },
-  { command: 'bots', description: 'บอทส่วนตัว / My bots' },
   { command: 'settings', description: 'ตั้งค่า / Settings' },
-  { command: 'cancel', description: 'ยกเลิก / Cancel' },
 ] as const;
 
 /** The single admin-only command, registered per-chat at boot. */

@@ -21,6 +21,7 @@ import { hashPassword, verifyPassword, validatePasswordLength } from './password
 import { AppError, ErrorCode } from '../utils/errors.js';
 import { generateCode } from '../utils/codeGenerator.js';
 import { parseShareCode } from '../utils/codeParser.js';
+import { formatSingleFileShareCode } from '../utils/shareCodeFormat.js';
 import { addDays, isExpired } from '../utils/date.js';
 import { truncate } from '../utils/safeText.js';
 import { CAPTION_MAX_LENGTH, FILENAME_MAX_LENGTH } from '../config/constants.js';
@@ -44,7 +45,7 @@ export interface UploadInput {
 
 export interface UploadResult {
   file: FileRow;
-  /** Bot-namespaced share code: `<bot.username>_<code>`. */
+  /** Bot-namespaced share code: `<bot.username>:<code>_<count><type>` (e.g. `mybot:ABC_1V`). */
   shareCode: string;
   /** Telegram deep link: `<TELEGRAM_DEEP_LINK_BASE>/<bot.username>?start=<code>`. */
   deepLink: string;
@@ -160,8 +161,9 @@ export class FileService {
       },
     });
 
-    // 9) User-facing artifacts.
-    const shareCode = `${bot.username}_${code}`;
+    // 9) User-facing artifacts. The cosmetic type-count suffix `_1<L>` makes
+    // it obvious what's behind the code at a glance.
+    const shareCode = formatSingleFileShareCode(bot.username, code, file.file_type);
     const deepLink = `${this.config.TELEGRAM_DEEP_LINK_BASE}/${bot.username}?start=${code}`;
 
     return { file, shareCode, deepLink };
@@ -203,6 +205,19 @@ export class FileService {
     }
     if (isExpired(file.expires_at)) {
       throw new AppError(ErrorCode.FILE_EXPIRED, 'this file has expired', { expose: true });
+    }
+
+    // 2.5) Visibility gate. A `private` file is visible only to its owner
+    // (and admins). Everyone else gets the same FILE_NOT_AVAILABLE shape a
+    // deleted row produces, so private codes don't disclose their existence.
+    if (file.visibility === 'private') {
+      const isOwner = file.owner_user_id === input.user.id;
+      const isAdmin =
+        input.user.role === 'super_admin' ||
+        this.config.ADMIN_IDS.includes(input.user.telegram_user_id);
+      if (!isOwner && !isAdmin) {
+        throw new AppError(ErrorCode.FILE_NOT_AVAILABLE, 'file not available', { expose: true });
+      }
     }
 
     // 3) Password gate.

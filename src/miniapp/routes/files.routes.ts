@@ -16,6 +16,7 @@ import type { MiniAppEnv } from '../middlewares.js';
 import type { AppServices, AppRepos, FileSummaryDto, FileDetailDto } from '../types.js';
 import type { FileRow } from '../../types/index.js';
 import { AppError, ErrorCode } from '../../utils/errors.js';
+import { formatSingleFileShareCode } from '../../utils/shareCodeFormat.js';
 
 export interface FilesRouteDeps {
   services: AppServices;
@@ -34,10 +35,23 @@ function clampInt(raw: string | undefined, fallback: number, min: number, max: n
   return n;
 }
 
-function toSummary(row: FileRow): FileSummaryDto {
+/**
+ * Resolve the canonical `botname:CODE_1<TYPE>` form for a file row, looking
+ * up the owning bot to get its username. Falls back to the bare code if the
+ * bot record is somehow missing — that shouldn't happen given foreign-key
+ * constraints, but the defensive path keeps the response well-formed.
+ */
+function shareCodeForFile(repos: AppRepos, row: FileRow): string {
+  const bot = repos.bots.findById(row.bot_id);
+  if (!bot) return row.code;
+  return formatSingleFileShareCode(bot.username, row.code, row.file_type);
+}
+
+function toSummary(repos: AppRepos, row: FileRow): FileSummaryDto {
   return {
     id: row.id,
     code: row.code,
+    share_code: shareCodeForFile(repos, row),
     file_type: row.file_type,
     file_name: row.file_name,
     size_bytes: row.size_bytes,
@@ -50,9 +64,9 @@ function toSummary(row: FileRow): FileSummaryDto {
   };
 }
 
-function toDetail(row: FileRow): FileDetailDto {
+function toDetail(repos: AppRepos, row: FileRow): FileDetailDto {
   return {
-    ...toSummary(row),
+    ...toSummary(repos, row),
     bot_id: row.bot_id,
     visibility: row.visibility,
     caption: row.caption,
@@ -72,7 +86,9 @@ export function filesRoutes(deps: FilesRouteDeps): Hono<MiniAppEnv> {
     const limit = clampInt(c.req.query('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT);
     const offset = clampInt(c.req.query('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
 
-    const items = services.file.listByOwner(user, { limit, offset }).map(toSummary);
+    const items = services.file
+      .listByOwner(user, { limit, offset })
+      .map((row) => toSummary(repos, row));
     const total = services.file.countByOwner(user);
 
     c.header('Cache-Control', 'no-store');
@@ -93,7 +109,7 @@ export function filesRoutes(deps: FilesRouteDeps): Hono<MiniAppEnv> {
       throw new AppError(ErrorCode.FILE_NOT_AVAILABLE, 'file not available', { expose: true });
     }
     c.header('Cache-Control', 'no-store');
-    return c.json({ data: toDetail(file) });
+    return c.json({ data: toDetail(repos, file) });
   });
 
   app.delete('/files/:id', (c) => {
@@ -135,7 +151,7 @@ export function filesRoutes(deps: FilesRouteDeps): Hono<MiniAppEnv> {
     }
     const updated = await services.file.setPassword(file, body.password, c.var.user);
     c.header('Cache-Control', 'no-store');
-    return c.json({ data: toDetail(updated) });
+    return c.json({ data: toDetail(repos, updated) });
   });
 
   app.delete('/files/:id/password', (c) => {
@@ -153,7 +169,7 @@ export function filesRoutes(deps: FilesRouteDeps): Hono<MiniAppEnv> {
     }
     const updated = services.file.removePassword(file, c.var.user);
     c.header('Cache-Control', 'no-store');
-    return c.json({ data: toDetail(updated) });
+    return c.json({ data: toDetail(repos, updated) });
   });
 
   app.post('/files/:id/expiry', async (c) => {
@@ -187,7 +203,7 @@ export function filesRoutes(deps: FilesRouteDeps): Hono<MiniAppEnv> {
     }
     const updated = services.file.setExpiry(file, days, c.var.user);
     c.header('Cache-Control', 'no-store');
-    return c.json({ data: toDetail(updated) });
+    return c.json({ data: toDetail(repos, updated) });
   });
 
   return app;

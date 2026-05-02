@@ -185,6 +185,7 @@ async function processOne(
       await ctx.services.share.ensureAccessible({
         collection: resolved.collection,
         password: prepared.password,
+        actor: ctx.user,
       });
     } catch (err) {
       return await handleAccessError(ctx, prepared, err, silent);
@@ -202,11 +203,7 @@ async function processOne(
         contextBot: ctx.bot,
         password: prepared.password,
       });
-      const decision = ctx.services.permission.canDownload(
-        ctx.user,
-        decoded.bot,
-        decoded.file,
-      );
+      const decision = ctx.services.permission.canDownload(ctx.user, decoded.bot, decoded.file);
       if (!decision.allowed) {
         if (!silent) await ctx.reply(ctx.t('decode.permission_denied'));
         return false;

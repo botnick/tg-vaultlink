@@ -1,12 +1,14 @@
 /**
- * Settings router — language picker plus the Mini App entry-point commands.
+ * Settings router — language picker.
  *
- * `/settings` and `/lang` open the locale keyboard; the inline buttons fire
+ * `/settings` opens the locale keyboard; the inline buttons fire
  * `cb-locale:<th|en>` callbacks that rewrite `users.locale` and acknowledge.
  *
- * `/dashboard`, `/files`, `/bots`, `/admin_dashboard` always exist so users
- * have a stable command surface; when `ENABLE_MINI_APP` is false they reply
- * with the localized "feature disabled" notice instead of the WebApp button.
+ * The Mini App entry-point commands (`/dashboard`, `/admin_dashboard`,
+ * `/lang`) used to live here as aliases. They were removed in the Tier-A
+ * UX simplification: the Mini App is reachable via the WebApp button on
+ * `/start`, `/files`, `/bots`, and `/admin`, so a separate command surface
+ * was redundant.
  */
 
 import { Composer, InlineKeyboard } from 'grammy';
@@ -17,26 +19,8 @@ function settingsKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text('🇹🇭 ภาษาไทย', 'cb-locale:th').text('🇬🇧 English', 'cb-locale:en');
 }
 
-function miniAppButton(ctx: AppContext, path: string, label: string): InlineKeyboard | null {
-  if (!ctx.config.ENABLE_MINI_APP || ctx.config.MINI_APP_URL.length === 0) {
-    return null;
-  }
-  const base = ctx.config.MINI_APP_URL.replace(/\/+$/, '');
-  const url = path === '' ? base : `${base}${path.startsWith('/') ? path : `/${path}`}`;
-  return new InlineKeyboard().webApp(label, url);
-}
-
-async function replyMiniAppOrDisabled(ctx: AppContext, path: string, label: string): Promise<void> {
-  const kb = miniAppButton(ctx, path, label);
-  if (!kb) {
-    await ctx.reply(ctx.t('common.error.feature_disabled'));
-    return;
-  }
-  await ctx.reply(ctx.t('miniapp.dashboard_caption'), { reply_markup: kb });
-}
-
 export function registerSettingsRouter(composer: Composer<AppContext>): void {
-  composer.command(['settings', 'lang'], async (ctx) => {
+  composer.command('settings', async (ctx) => {
     await ctx.reply(ctx.t('settings.header'), {
       parse_mode: 'HTML',
       reply_markup: settingsKeyboard(),
@@ -61,13 +45,6 @@ export function registerSettingsRouter(composer: Composer<AppContext>): void {
     } catch {
       // editing may fail if the original message is unavailable
     }
-  });
-
-  // Mini App entry-points (or feature-disabled fallbacks). The `/files` and
-  // `/bots` commands are now owned by the dedicated files/botManagement
-  // routers (Wave 7); only `/dashboard` remains as a Mini App shortcut.
-  composer.command('dashboard', async (ctx) => {
-    await replyMiniAppOrDisabled(ctx, '', ctx.t('start.dashboard_button'));
   });
 }
 

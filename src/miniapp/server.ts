@@ -118,6 +118,37 @@ export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
   // CORS first, on every route, so preflights short-circuit before auth.
   app.use('*', corsMiddleware({ config }));
 
+  // Request-id + diagnostic envelope. Stamps a short id onto every request
+  // and surfaces it on every error log line and response header so a 500
+  // can be matched 1:1 to its server-side stack. The id is also returned
+  // to the client in the `X-Request-Id` response header so users can
+  // forward it when reporting issues.
+  app.use('*', async (c, next) => {
+    const id = Math.random().toString(36).slice(2, 10);
+    c.set('reqId', id);
+    c.header('X-Request-Id', id);
+    const start = Date.now();
+    try {
+      await next();
+    } finally {
+      // 4xx and 5xx get a structured one-liner so the operator can grep by
+      // request-id without reading the full body. 2xx stays quiet.
+      const status = c.res.status;
+      if (status >= 400) {
+        log.error(
+          {
+            reqId: id,
+            method: c.req.method,
+            path: c.req.path,
+            status,
+            durationMs: Date.now() - start,
+          },
+          'mini app: request finished with error',
+        );
+      }
+    }
+  });
+
   // Unauthenticated health check. Returning quickly here keeps platform
   // liveness probes from waiting on signature verification.
   app.get('/healthz', (c) => {
@@ -143,21 +174,64 @@ export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
 
   app.onError((err, c) => {
     c.header('Cache-Control', 'no-store');
+    const reqId = (c.var as { reqId?: string }).reqId ?? '-';
+    const path = c.req.path;
+    const method = c.req.method;
+
     if (AppError.is(err)) {
       const status = statusForAppError(err);
       const body = {
         error: {
           code: err.code,
           message: err.expose ? err.message : 'internal error',
+          // Surface the request id to the client so users can quote it when
+          // reporting an issue. Safe — it's already in the response header.
+          requestId: reqId,
         },
       };
-      if (status >= 500) {
-        log.error({ err, code: err.code, meta: err.meta }, 'mini app: app error');
-      }
+      // ALWAYS log AppErrors (even 400s) at error-level for now so we get a
+      // full picture of what the Mini App is throwing. Easy to dial back
+      // once 500 hunting is over.
+      log.error(
+        {
+          reqId,
+          method,
+          path,
+          status,
+          code: err.code,
+          expose: err.expose,
+          meta: err.meta,
+          stack: err.stack,
+          cause: (err as { cause?: unknown }).cause,
+        },
+        `mini app: app error (${err.code})`,
+      );
       return c.json(body, status as 400 | 500);
     }
-    log.error({ err }, 'mini app: unhandled error');
-    return c.json({ error: { code: 'internal_error', message: 'internal error' } }, 500);
+
+    // Truly unexpected — log everything we can extract. This is the path
+    // we expect the user's "500 on Telegram-related stuff" complaint to
+    // hit; with reqId the next reproduction will pinpoint the route +
+    // stack in one go.
+    const e = err as Error & { cause?: unknown };
+    log.error(
+      {
+        reqId,
+        method,
+        path,
+        errMessage: e.message,
+        errName: e.name,
+        stack: e.stack,
+        cause: e.cause,
+      },
+      'mini app: unhandled error',
+    );
+    return c.json(
+      {
+        error: { code: 'internal_error', message: 'internal error', requestId: reqId },
+      },
+      500,
+    );
   });
 
   let server: ServerType | undefined;

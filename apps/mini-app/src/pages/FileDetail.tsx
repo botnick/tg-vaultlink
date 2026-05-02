@@ -161,8 +161,8 @@ export function FileDetailPage(): JSX.Element {
               {t('file_detail.share_code')}
             </p>
             <div className="mt-1 flex items-center justify-between gap-2">
-              <code className="truncate font-mono text-sm text-tg-text">{file.code}</code>
-              <CopyButton value={file.code} label={t('file_detail.copy')} />
+              <code className="truncate font-mono text-sm text-tg-text">{file.share_code}</code>
+              <CopyButton value={file.share_code} label={t('file_detail.copy')} />
             </div>
             <div className="mt-4">
               <p className="text-xs uppercase tracking-wider text-tg-hint">

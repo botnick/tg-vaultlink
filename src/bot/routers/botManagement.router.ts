@@ -31,26 +31,23 @@ export function registerBotManagementRouter(
 ): void {
   const { childManager } = deps;
 
-  async function handleAdd(
-    ctx: AppContext,
-    rawArg: string,
-    mode: 'personal_public' | 'personal_private',
-  ): Promise<void> {
+  async function handleAdd(ctx: AppContext, rawArg: string): Promise<void> {
     const token = rawArg.trim();
     if (token.length === 0) {
       await ctx.reply(ctx.t('bot.add.usage'), { parse_mode: 'HTML' });
       return;
     }
 
+    // Default to personal_public — anyone can decode AND upload through the
+    // new bot, exactly like the system's main bot. The owner can lock it
+    // down later with `/mode_private`.
     const record = await ctx.services.bot.addBot({
       owner: ctx.user,
       rawToken: token,
-      mode,
+      mode: 'personal_public',
     });
 
-    const successKey =
-      mode === 'personal_private' ? 'bot.add.success_private' : 'bot.add.success_public';
-    await ctx.reply(ctx.t(successKey, { username: escapeHtml(record.username) }), {
+    await ctx.reply(ctx.t('bot.add.success_public', { username: escapeHtml(record.username) }), {
       parse_mode: 'HTML',
     });
 
@@ -76,30 +73,7 @@ export function registerBotManagementRouter(
   }
 
   composer.command('add_bot', rateLimitMiddleware('add_bot'), async (ctx) => {
-    await handleAdd(ctx, (ctx.match ?? '').toString(), 'personal_private');
-  });
-
-  composer.command('add_bot_open', rateLimitMiddleware('add_bot'), async (ctx) => {
-    await handleAdd(ctx, (ctx.match ?? '').toString(), 'personal_public');
-  });
-
-  composer.command('my_bots', async (ctx) => {
-    const bots = ctx.services.bot.listForOwner(ctx.user);
-    if (bots.length === 0) {
-      await ctx.reply(ctx.t('bot.list_empty'), { parse_mode: 'HTML' });
-      return;
-    }
-    const lines = [ctx.t('bot.list_header', { count: bots.length })];
-    for (const b of bots) {
-      lines.push(
-        ctx.t('bot.list_item', {
-          username: escapeHtml(b.username),
-          mode: escapeHtml(b.mode),
-          status: escapeHtml(b.status),
-        }),
-      );
-    }
-    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+    await handleAdd(ctx, (ctx.match ?? '').toString());
   });
 
   composer.command('remove_bot', async (ctx) => {
@@ -113,6 +87,14 @@ export function registerBotManagementRouter(
       await ctx.reply(ctx.t('bot.remove.not_found', { username: escapeHtml(arg) }), {
         parse_mode: 'HTML',
       });
+      return;
+    }
+    // The system's main bot row is created by the bootstrap from
+    // MAIN_BOT_TOKEN and is NOT user-removable. The bootstrap re-seeds it
+    // every boot anyway, but soft-deleting it would still take the bot
+    // offline until next restart. Refuse here.
+    if (record.mode === 'main_public') {
+      await ctx.reply(ctx.t('bot.remove.not_allowed_main'), { parse_mode: 'HTML' });
       return;
     }
     const decision = ctx.services.permission.canManageBot(ctx.user, record);
@@ -130,28 +112,19 @@ export function registerBotManagementRouter(
   });
 
   /* ------------------------------------------------------------------- *
-   * Wave 7: `/bots` — owner listing + add buttons.
+   * `/bots` — owner listing.
    * ------------------------------------------------------------------- */
   composer.command('bots', async (ctx) => {
     await handleBotsCommand(ctx);
   });
-
-  composer.callbackQuery('bots:add', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await ctx.reply(ctx.t('bot.add.usage'), { parse_mode: 'HTML' });
-  });
-
-  composer.callbackQuery('bots:add_open', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await ctx.reply(ctx.t('bot.add.usage'), { parse_mode: 'HTML' });
-  });
 }
 
 /**
- * Re-usable handler for the `/bots` command, exposed so the main-menu
- * router can re-dispatch from `menu:bots`. Lists the owner's bots with
- * inline action buttons (add / add_open). Pause/resume is intentionally
- * deferred to a later wave — for v1 only Add/Remove is exposed.
+ * Re-usable handler for the `/bots` command. Sends ONE chat message: the
+ * owner's bot list, an inline hint with the add/remove command syntax, and
+ * — when the Mini App is enabled — a single "Open Mini App" button. No
+ * per-row buttons; per-bot management goes through the slash commands or
+ * the Mini App so the chat doesn't accumulate stale keyboards.
  */
 export async function handleBotsCommand(ctx: AppContext): Promise<void> {
   const bots = ctx.services.bot.listForOwner(ctx.user);
@@ -170,23 +143,13 @@ export async function handleBotsCommand(ctx: AppContext): Promise<void> {
       );
     }
   }
+  lines.push(ctx.t('bot.list_actions_hint'));
 
-  const kb = new InlineKeyboard()
-    .text(
-      '➕ ' +
-        ctx
-          .t('bot.add.usage')
-          .split('\n')[0]!
-          .replace(/<[^>]+>/g, ''),
-      'bots:add',
-    )
-    .row()
-    .text('➕ ' + 'add_bot_open', 'bots:add_open');
-
+  const opts: Parameters<typeof ctx.reply>[1] = { parse_mode: 'HTML' };
   if (ctx.config.ENABLE_MINI_APP && ctx.config.MINI_APP_URL.length > 0) {
     const url = `${ctx.config.MINI_APP_URL.replace(/\/+$/, '')}/bots`;
-    kb.row().webApp(ctx.t('menu.open_mini_app'), url);
+    opts.reply_markup = new InlineKeyboard().webApp(ctx.t('menu.open_mini_app'), url);
   }
 
-  await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  await ctx.reply(lines.join('\n'), opts);
 }

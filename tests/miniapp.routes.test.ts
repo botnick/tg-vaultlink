@@ -94,7 +94,12 @@ function wire(): Wired {
     username: 'unused',
     firstName: 'unused',
   }));
-  const permission = new PermissionService(env.repos.permissions, userSvc, env.config);
+  const permission = new PermissionService(
+    env.repos.permissions,
+    userSvc,
+    env.config,
+    env.repos.bots,
+  );
   const rateLimit = new RateLimitService(env.repos.rateLimit, env.config);
   const settings = new SettingsService(env.repos.settings);
   const report = new ReportService(env.repos.reports, env.repos.files, audit, env.config);

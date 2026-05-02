@@ -13,6 +13,15 @@ import { useT } from '../lib/i18n.js';
 
 interface Props {
   value: string;
+  /**
+   * Visual variant:
+   *   - `icon` (default): a circular icon-only button. Uses native browser
+   *     tooltip for the "Copy" label so the button stays compact in
+   *     dense layouts.
+   *   - `pill`: rounded pill with icon + text label. Use when there's
+   *     room for the explicit affordance.
+   */
+  variant?: 'icon' | 'pill';
   label?: string;
   className?: string;
 }
@@ -43,7 +52,12 @@ async function writeClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function CopyButton({ value, label, className = '' }: Props): JSX.Element {
+export function CopyButton({
+  value,
+  variant = 'icon',
+  label,
+  className = '',
+}: Props): JSX.Element {
   const t = useT();
   const [copied, setCopied] = useState(false);
 
@@ -57,6 +71,30 @@ export function CopyButton({ value, label, className = '' }: Props): JSX.Element
     }
   };
 
+  const tooltip = copied ? t('common.copied') : (label ?? t('common.copy'));
+
+  if (variant === 'icon') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={tooltip}
+        aria-label={tooltip}
+        className={[
+          'press-scale inline-flex h-9 w-9 items-center justify-center rounded-full',
+          'bg-tg-secondary-bg text-tg-link transition-colors',
+          copied ? 'bg-emerald-500/20 text-emerald-500' : '',
+          className,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        {copied ? <CheckIcon size={18} /> : <CopyIcon size={18} />}
+      </button>
+    );
+  }
+
+  // pill — kept for places that still want an explicit text label.
   return (
     <button
       type="button"
@@ -67,7 +105,7 @@ export function CopyButton({ value, label, className = '' }: Props): JSX.Element
       ].join(' ')}
     >
       {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
-      <span>{copied ? t('common.copied') : (label ?? t('common.copy'))}</span>
+      <span>{tooltip}</span>
     </button>
   );
 }

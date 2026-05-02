@@ -98,7 +98,8 @@ describe('file.service — upload happy path', () => {
 
     expect(result.file.owner_user_id).toBe(owner.id);
     expect(result.file.bot_id).toBe(bot.id);
-    expect(result.shareCode).toMatch(new RegExp(`^${bot.username}_[A-Z2-9]{12}$`));
+    // Single-file share codes carry a `_1<TYPE>` suffix.
+    expect(result.shareCode).toMatch(new RegExp(`^${bot.username}:[A-Z2-9]{12}_1[A-Z]$`));
     expect(result.deepLink.startsWith('https://t.me/')).toBe(true);
     expect(result.deepLink).toContain(bot.username);
 
