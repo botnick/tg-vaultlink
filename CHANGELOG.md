@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ~1.5 s after the last arrival into a single Collection — replying ONCE with
   one share code instead of N "Upload successful" messages. No `/new`, no
   buttons; sending several files at once IS the way to bundle them.
+- **Per-album rate-limit accounting.** An album counts as ONE upload event,
+  not N: only the first item in a `media_group_id` consumes a slot from
+  `UPLOAD_LIMIT_PER_HOUR`. Subsequent items in the same album skip the
+  limiter, so a 17-photo album no longer burns through the hourly quota and
+  no longer floods the user with rate-limited replies.
 - **Removed the `/new` picker.** The "single file vs Collection" choice was
   redundant — single uploads stay single, multi-uploads auto-bundle. The
   `/new` command, the `coll:finish` / `coll:summary` / `coll:cancel`

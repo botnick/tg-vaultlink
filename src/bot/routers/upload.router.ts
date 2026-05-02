@@ -16,7 +16,6 @@
 
 import { Composer } from 'grammy';
 import type { AppContext } from '../context.js';
-import { rateLimitMiddleware } from '../middlewares/rateLimit.middleware.js';
 import { extractFileMeta } from '../../utils/fileMeta.js';
 import { escapeHtml } from '../../utils/safeText.js';
 import { AppError } from '../../utils/errors.js';
@@ -62,7 +61,7 @@ export function registerUploadRouter(composer: Composer<AppContext>): void {
   // map stays bounded and entries are removed the moment the group finalizes.
   const albumBuffers = new Map<string, AlbumBufferEntry>();
 
-  composer.on(ATTACHMENT_QUERIES, rateLimitMiddleware('upload'), async (ctx) => {
+  composer.on(ATTACHMENT_QUERIES, async (ctx) => {
     const decision = ctx.services.permission.canUpload(ctx.user, ctx.bot);
     if (!decision.allowed) {
       await ctx.reply(ctx.t('upload.permission_denied'));
@@ -78,11 +77,33 @@ export function registerUploadRouter(composer: Composer<AppContext>): void {
       return;
     }
 
-    // 1) Album auto-bundle path: multiple media sent at once → one Collection.
+    // Rate-limit policy: an album is ONE upload event, not N. We consume the
+    // upload slot only on the FIRST item in a group (or for any non-album
+    // message). Subsequent items in the same album skip the check entirely
+    // so a 17-photo album doesn't blow through UPLOAD_LIMIT_PER_HOUR and
+    // generate a flood of "you are doing that too often" replies.
     const mediaGroupId = message.media_group_id;
-    if (ctx.config.ENABLE_COLLECTIONS && mediaGroupId && message.chat) {
-      const key = `${ctx.bot.id}:${ctx.user.id}:${mediaGroupId}`;
-      let entry = albumBuffers.get(key);
+    const albumKey =
+      mediaGroupId && message.chat
+        ? `${ctx.bot.id}:${ctx.user.id}:${mediaGroupId}`
+        : null;
+    const isContinuationOfActiveAlbum = albumKey !== null && albumBuffers.has(albumKey);
+
+    if (!isContinuationOfActiveAlbum) {
+      const rl = ctx.services.rateLimit.check('upload', ctx.user.telegram_user_id);
+      if (!rl.allowed) {
+        try {
+          await ctx.reply(ctx.t('common.error.rate_limited'));
+        } catch {
+          // best-effort
+        }
+        return;
+      }
+    }
+
+    // 1) Album auto-bundle path: multiple media sent at once → one Collection.
+    if (ctx.config.ENABLE_COLLECTIONS && mediaGroupId && message.chat && albumKey) {
+      let entry = albumBuffers.get(albumKey);
 
       if (!entry) {
         // First item in this album — mint a draft and seed the buffer.
@@ -103,15 +124,15 @@ export function registerUploadRouter(composer: Composer<AppContext>): void {
           timer: setTimeout(() => undefined, 0),
         };
         clearTimeout(entry.timer);
-        albumBuffers.set(key, entry);
+        albumBuffers.set(albumKey, entry);
       }
 
       try {
         const draft = ctx.repos.collectionDrafts.findById(entry.draftId);
         if (!draft) {
-          albumBuffers.delete(key);
+          albumBuffers.delete(albumKey);
           getLogger().warn(
-            { key, draftId: entry.draftId },
+            { key: albumKey, draftId: entry.draftId },
             'album draft disappeared mid-bundle',
           );
           return;
@@ -127,7 +148,7 @@ export function registerUploadRouter(composer: Composer<AppContext>): void {
 
       // Debounce: clear and re-arm the finalize timer. The latest item wins.
       clearTimeout(entry.timer);
-      const capturedKey = key;
+      const capturedKey = albumKey;
       const capturedEntry = entry;
       const userLocale: Locale =
         ctx.user.locale === 'th' || ctx.user.locale === 'en'
