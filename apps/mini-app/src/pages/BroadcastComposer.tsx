@@ -696,12 +696,25 @@ export function BroadcastComposer(): JSX.Element {
               ))}
             </div>
             {state.media_type !== '' ? (
-              <input
-                value={state.media_file_id}
-                onChange={(e) => setState((s) => ({ ...s, media_file_id: e.target.value }))}
-                placeholder={t('broadcast.composer.media_file_id_placeholder')}
-                className="mt-2 w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 font-mono text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
-              />
+              <>
+                <input
+                  value={state.media_file_id}
+                  onChange={(e) => setState((s) => ({ ...s, media_file_id: e.target.value }))}
+                  placeholder={
+                    state.media_type === 'photo'
+                      ? 'https://example.com/image.jpg'
+                      : state.media_type === 'video'
+                      ? 'https://example.com/clip.mp4'
+                      : state.media_type === 'animation'
+                      ? 'https://example.com/anim.gif'
+                      : 'https://example.com/file.pdf'
+                  }
+                  className="mt-2 w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+                />
+                <p className="mt-1.5 text-[10px] leading-relaxed text-tg-hint">
+                  {t('broadcast.composer.media_hint')}
+                </p>
+              </>
             ) : null}
           </Section>
 
@@ -719,27 +732,40 @@ export function BroadcastComposer(): JSX.Element {
                 {state.buttons.map((row, ri) => (
                   <div key={ri} className="rounded-xl bg-tg-secondary-bg/60 p-2">
                     {row.map((btn, ci) => (
-                      <div key={ci} className="mb-1 flex gap-1.5">
+                      <div key={ci} className="mb-2 last:mb-0">
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-tg-hint">
+                            {t('broadcast.composer.button_text')} #{ri + 1}
+                            {row.length > 1 ? `.${ci + 1}` : ''}
+                          </span>
+                          {/* Hit-area-friendly remove button. Uses
+                              onPointerDown so mobile can't drop the event
+                              between input-blur (keyboard dismiss) and
+                              the would-be click after layout reflow. */}
+                          <button
+                            type="button"
+                            onPointerDown={(e) => {
+                              e.preventDefault();
+                              removeButton(ri, ci);
+                            }}
+                            className="press-scale flex h-8 items-center gap-1 rounded-lg bg-tg-destructive-text/10 px-2.5 text-[11px] font-semibold text-tg-destructive-text"
+                            aria-label={t('broadcast.composer.remove_button')}
+                          >
+                            🗑 {t('broadcast.composer.remove_button')}
+                          </button>
+                        </div>
                         <input
                           value={btn.text}
                           onChange={(e) => updateButton(ri, ci, { text: e.target.value })}
                           placeholder={t('broadcast.composer.button_text')}
-                          className="flex-1 rounded-lg border border-black/10 bg-tg-bg px-2 py-1.5 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+                          className="mb-1 w-full rounded-lg border border-black/10 bg-tg-bg px-2 py-1.5 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
                         />
                         <input
                           value={btn.url}
                           onChange={(e) => updateButton(ri, ci, { url: e.target.value })}
                           placeholder="https://"
-                          className="flex-[1.5] rounded-lg border border-black/10 bg-tg-bg px-2 py-1.5 text-xs text-tg-link placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+                          className="w-full rounded-lg border border-black/10 bg-tg-bg px-2 py-1.5 font-mono text-[11px] text-tg-link placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
                         />
-                        <button
-                          type="button"
-                          onClick={() => removeButton(ri, ci)}
-                          className="press-scale rounded-lg bg-tg-destructive-text/10 px-2 text-xs font-semibold text-tg-destructive-text"
-                          aria-label={t('broadcast.composer.remove_button')}
-                        >
-                          ×
-                        </button>
                       </div>
                     ))}
                   </div>

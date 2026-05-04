@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-05-05
+
+### Fixed
+
+- **Inline button "Remove" was unreachable on mobile.** When a textarea
+  or url input had focus, tapping the small `×` corner button fired
+  blur on the input first; the resulting keyboard-dismiss reflow shifted
+  the page so the click never reached the would-be `×` target. Switched
+  the handler to `onPointerDown` (which fires before blur) and replaced
+  the `×` icon with a full "🗑 Remove" pill that takes a proper-sized
+  hit area. Each row now also has a "#1 #1.2" label so multi-button
+  rows are visually unambiguous.
+
+### Changed
+
+- **Media accepts a public URL directly** — paste any image / video /
+  document / animation URL into the composer and Telegram will fetch
+  and re-upload it at send time (≤ 5 MB photos, ≤ 50 MB videos +
+  documents per Telegram's limits). The old "forward a file to the bot
+  to harvest its file_id" flow still works (a file_id from the
+  broadcasting bot is accepted in the same field) but is no longer
+  the primary path. Placeholders show example URLs per media type
+  (`https://example.com/image.jpg` for photo, `clip.mp4` for video,
+  etc.) so the field's purpose is obvious without reading the hint.
+
+### Notes
+
+- No backend changes — the worker already passed `media_file_id`
+  straight through to grammY's `bot.api.sendPhoto / sendVideo / ...`,
+  which already accept URLs natively.
+- Composer locale strings updated for both en + th.
+- 185 tests pass; lint + typecheck clean. Mini App build 344 KB JS /
+  28 KB CSS (98 KB / 6 KB gzipped).
+
 ## [0.3.2] - 2026-05-05
 
 ### Changed (broadcast composer — radical simplification)
