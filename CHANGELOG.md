@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-05
+
+### Changed (broadcast composer — radical simplification)
+
+- **One-screen composer.** Replaced the five-section accordion layout
+  from v0.3.1 with a single hero textarea. The 80% flow is now: pick
+  bot (auto if you own one), type, send. Everything else lives behind
+  a single "More options ▾" toggle.
+- **Status row** between textarea and Send shows the four things you
+  actually need to glance at: 👥 audience count, ⏰ schedule (if
+  set), 🖼️ media type (if set), 🔘 button count (if any). Tap-targets
+  stay in "More options".
+- **Format toolbar inlined** above the textarea: B / I / U / </> / 🔗
+  + the two most-used template variables (`{{first_name}}`,
+  `{{username}}`) on a single chip row. Parse-mode toggle moved into
+  More options since most operators pick HTML once and forget it.
+- **Send button shows the count.** "🚀 Send to 1,234" instead of just
+  "Send now" — operators see who they're firing at without scrolling.
+  Switches to "⏰ Schedule" when a `scheduled_at` is set.
+- **Bot picker auto-hides** unless the operator owns ≥ 2 bots (was
+  always visible).
+- **Save / delete shrunk to icon-only buttons** — labels were a wall
+  of text on top of the primary "Send to N" CTA.
+
+### Notes
+
+- No backend changes. Pure layout pass on `BroadcastComposer.tsx`.
+- 4 new locale keys (en + th).
+- Mini App build 344 KB JS / 28 KB CSS (98 KB / 6 KB gzipped).
+- 185 tests pass; lint + typecheck clean.
+
 ## [0.3.1] - 2026-05-05
 
 ### Added

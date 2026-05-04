@@ -1,28 +1,26 @@
 /**
- * VaultLink Mini App — broadcast composer (v0.3.1 redesign).
+ * VaultLink Mini App — broadcast composer (v0.3.2 simplified).
  *
- * Two-pane layout:
+ * Layout — single column, hero textarea, everything else hidden behind
+ * one "More options" toggle.
  *
- *  ┌──────────────────────────────┐  ← sticky live preview (1:1 Telegram bubble)
+ *  ┌──────────────────────────────┐  ← sticky preview bubble
  *  │  MessagePreview              │
  *  └──────────────────────────────┘
- *  ┌──────────────────────────────┐  ← form, organized as 5 collapsible
- *  │  ▾ Content                   │     accordion sections so the page
- *  │     [textarea + chips]       │     doesn't scroll forever.
- *  │  ▸ Media                     │
- *  │  ▸ Buttons                   │
- *  │  ▸ Audience  (live count)    │
- *  │  ▸ Schedule                  │
- *  └──────────────────────────────┘
- *  ┌──────────────────────────────┐  ← sticky action bar
- *  │  Save · Send · Schedule · ✗  │
+ *  ┌──────────────────────────────┐  ← format bar (B I U code link var)
+ *  │  [textarea: hero]            │
  *  └──────────────────────────────┘
  *
- * Live preview re-renders on every keystroke. Audience count is fetched
- * via the stateless `POST /broadcasts/preview-audience` endpoint with a
- * 500 ms debounce so a fast typist doesn't hammer the server. The
- * recipient sample (5 users) is rendered alongside the count so the
- * operator sees who they're actually about to message.
+ *  👥 1,234 people     ⏰ tomorrow 09:00     ⚙ More options
+ *
+ *  ┌──────────────────────────────┐  ← sticky bottom send bar
+ *  │  💾 Save · 🚀 Send to N      │
+ *  └──────────────────────────────┘
+ *
+ * "More options" expands a single panel containing every advanced
+ * control (bot picker, parse_mode, media, inline buttons, audience
+ * filter detail, schedule, flags). Default broadcast = pick bot →
+ * type → send. The 80% case never opens it.
  */
 
 import {
@@ -109,9 +107,6 @@ function rowToState(row: BroadcastRow): ComposerState {
   };
 }
 
-/** Strip half-filled rows so a "+ Add row" tap doesn't ride into the
- * server. Backend tolerates this too, but doing it here means the
- * preview also matches what the recipient will see. */
 function cleanButtons(buttons: BroadcastButton[][]): BroadcastButton[][] {
   return buttons
     .map((row) =>
@@ -142,10 +137,6 @@ function stateToPayload(s: ComposerState): Record<string, unknown> {
   };
 }
 
-/* -------------------------------------------------------------------------- *
- * Tiny debounce hook
- * -------------------------------------------------------------------------- */
-
 function useDebounced<T>(value: T, delayMs: number): T {
   const [out, setOut] = useState<T>(value);
   useEffect(() => {
@@ -156,46 +147,7 @@ function useDebounced<T>(value: T, delayMs: number): T {
 }
 
 /* -------------------------------------------------------------------------- *
- * Accordion section
- * -------------------------------------------------------------------------- */
-
-interface AccordionProps {
-  open: boolean;
-  onToggle: () => void;
-  title: ReactNode;
-  badge?: ReactNode;
-  children: ReactNode;
-}
-
-function Accordion({ open, onToggle, title, badge, children }: AccordionProps): JSX.Element {
-  return (
-    <Card padding="none" className="mb-2 overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="press-scale flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
-      >
-        <span className="flex items-center gap-2 text-sm font-semibold text-tg-text">
-          <span
-            className={[
-              'inline-block transition-transform text-tg-subtitle-text',
-              open ? 'rotate-90' : '',
-            ].join(' ')}
-            aria-hidden="true"
-          >
-            ▸
-          </span>
-          {title}
-        </span>
-        {badge ? <span className="shrink-0">{badge}</span> : null}
-      </button>
-      {open ? <div className="px-3 pb-3 pt-0">{children}</div> : null}
-    </Card>
-  );
-}
-
-/* -------------------------------------------------------------------------- *
- * Insertion helpers — wrap selection or insert at cursor
+ * Insertion helpers
  * -------------------------------------------------------------------------- */
 
 function wrapSelection(
@@ -240,11 +192,9 @@ export function BroadcastComposer(): JSX.Element {
   const [hydrated, setHydrated] = useState(!isEditing);
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [openSection, setOpenSection] = useState<
-    'content' | 'media' | 'buttons' | 'audience' | 'schedule' | null
-  >('content');
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
-  // -------- bots (for picker) --------
+  // -------- bots --------
   const botsQuery = useQuery({
     queryKey: ['bots-for-broadcast'],
     queryFn: () =>
@@ -267,14 +217,14 @@ export function BroadcastComposer(): JSX.Element {
     }
   }, [isEditing, draftQuery.data]);
 
-  // -------- default bot picker --------
+  // Auto-pick first bot.
   useEffect(() => {
     if (!isEditing && state.bot_id === null && bots.length > 0 && bots[0]) {
       setState((s) => ({ ...s, bot_id: bots[0]!.id }));
     }
   }, [bots, state.bot_id, isEditing]);
 
-  // -------- debounced live audience preview --------
+  // -------- live audience preview --------
   const debouncedAudience = useDebounced(state.audience, 500);
   const debouncedBotId = useDebounced(state.bot_id, 500);
   const audienceQuery = useQuery({
@@ -301,7 +251,6 @@ export function BroadcastComposer(): JSX.Element {
       }),
   });
   const audienceCount = audienceQuery.data?.count ?? null;
-  const audienceSample = audienceQuery.data?.sample ?? [];
 
   /* --------------------------- mutations ------------------------------- */
 
@@ -395,14 +344,6 @@ export function BroadcastComposer(): JSX.Element {
       return { ...s, buttons };
     });
   };
-  const addButtonToRow = (rowIdx: number): void => {
-    setState((s) => {
-      const buttons = s.buttons.map((row, i) =>
-        i !== rowIdx ? row : [...row, { text: '', url: '' }],
-      );
-      return { ...s, buttons };
-    });
-  };
   const removeButton = (rowIdx: number, colIdx: number): void => {
     setState((s) => {
       const buttons = s.buttons
@@ -421,7 +362,6 @@ export function BroadcastComposer(): JSX.Element {
     setAudience({ user_ids: list });
   };
 
-  // Insert a wrapping pair at the cursor for HTML/Markdown formatting.
   const wrap = (before: string, after?: string): void => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -433,7 +373,6 @@ export function BroadcastComposer(): JSX.Element {
     });
   };
 
-  // Insert a literal token (template var or chip text) at the cursor.
   const insertToken = (token: string): void => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -461,8 +400,7 @@ export function BroadcastComposer(): JSX.Element {
     : { first_name: 'You', last_name: null, username: null, telegram_user_id: '0' };
 
   const cleanedPreviewButtons = useMemo(() => cleanButtons(state.buttons), [state.buttons]);
-  const hasMedia =
-    state.media_type !== '' && state.media_file_id.trim().length > 0;
+  const hasMedia = state.media_type !== '' && state.media_file_id.trim().length > 0;
 
   /* --------------------------- error banner ------------------------------- */
 
@@ -490,46 +428,48 @@ export function BroadcastComposer(): JSX.Element {
     );
   }
 
-  /* --------------------------- render ------------------------------- */
+  /* --------------------------- chips data ------------------------------- */
 
-  const formatChips = state.parse_mode === 'HTML'
-    ? [
-        { label: 'B', wrap: ['<b>', '</b>'] as const },
-        { label: 'I', wrap: ['<i>', '</i>'] as const },
-        { label: 'U', wrap: ['<u>', '</u>'] as const },
-        { label: 'S', wrap: ['<s>', '</s>'] as const },
-        { label: '</>', wrap: ['<code>', '</code>'] as const },
-        { label: '🔗', wrap: ['<a href="https://">', '</a>'] as const },
-      ]
-    : state.parse_mode === 'MarkdownV2'
-    ? [
-        { label: 'B', wrap: ['*', '*'] as const },
-        { label: 'I', wrap: ['_', '_'] as const },
-        { label: 'U', wrap: ['__', '__'] as const },
-        { label: 'S', wrap: ['~', '~'] as const },
-        { label: '</>', wrap: ['`', '`'] as const },
-        { label: '🔗', wrap: ['[', '](https://)'] as const },
-      ]
-    : [];
+  const formatChips: Array<{ label: string; wrap: readonly [string, string] }> =
+    state.parse_mode === 'HTML'
+      ? [
+          { label: 'B', wrap: ['<b>', '</b>'] },
+          { label: 'I', wrap: ['<i>', '</i>'] },
+          { label: 'U', wrap: ['<u>', '</u>'] },
+          { label: '</>', wrap: ['<code>', '</code>'] },
+          { label: '🔗', wrap: ['<a href="https://">', '</a>'] },
+        ]
+      : state.parse_mode === 'MarkdownV2'
+      ? [
+          { label: 'B', wrap: ['*', '*'] },
+          { label: 'I', wrap: ['_', '_'] },
+          { label: 'U', wrap: ['__', '__'] },
+          { label: '</>', wrap: ['`', '`'] },
+          { label: '🔗', wrap: ['[', '](https://)'] },
+        ]
+      : [];
 
-  const templateChips: Array<{ label: string; token: string }> = [
-    { label: '{{first_name}}', token: '{{first_name}}' },
-    { label: '{{username}}', token: '{{username}}' },
-    { label: '{{full_name}}', token: '{{full_name}}' },
-    { label: '{{user_id}}', token: '{{user_id}}' },
-  ];
+  const sendDisabled =
+    state.bot_id === null ||
+    state.text.trim().length === 0 ||
+    audienceCount === 0;
 
-  const showBotPicker = bots.length !== 1;
-  const audienceBadge = audienceQuery.isLoading
-    ? '…'
-    : audienceCount !== null
-    ? `${audienceCount.toLocaleString()}`
+  const audiencePill =
+    audienceCount === null
+      ? t('broadcast.composer.audience_pick_bot')
+      : audienceCount === 0
+      ? t('broadcast.composer.audience_empty')
+      : `${audienceCount.toLocaleString()} ${t('broadcast.composer.recipients')}`;
+
+  const scheduledLabel = state.scheduled_at
+    ? new Date(state.scheduled_at).toLocaleString()
     : '';
-  const buttonsBadge = cleanedPreviewButtons.length > 0 ? `${cleanedPreviewButtons.flat().length}` : '';
+
+  /* --------------------------- render ------------------------------- */
 
   return (
     <Layout title={t('broadcast.composer.title')} back={() => navigate(-1)} hideNav>
-      {/* Sticky preview pane — always visible while form scrolls */}
+      {/* Sticky 1:1 preview */}
       <div className="sticky top-0 z-10 -mx-4 mb-3 bg-tg-bg/90 px-4 py-2 backdrop-blur">
         <MessagePreview
           text={state.text}
@@ -550,63 +490,8 @@ export function BroadcastComposer(): JSX.Element {
         </p>
       ) : null}
 
-      {/* Bot picker — only when more than 1 owned bot */}
-      {showBotPicker ? (
-        <Card padding="sm" className="mb-2">
-          <label className="block">
-            <span className="text-[10px] uppercase tracking-wider text-tg-hint">
-              {t('broadcast.composer.bot')}
-            </span>
-            <select
-              value={state.bot_id ?? ''}
-              onChange={(e) => setBotId(Number.parseInt(e.target.value, 10))}
-              className="mt-1 w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-sm text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
-            >
-              <option value="">{t('broadcast.composer.bot_placeholder')}</option>
-              {bots.map((b) => (
-                <option key={b.id} value={b.id}>
-                  @{b.username}
-                  {b.display_name ? ` · ${b.display_name}` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-        </Card>
-      ) : null}
-
-      {/* Content */}
-      <Accordion
-        open={openSection === 'content'}
-        onToggle={() =>
-          setOpenSection((s) => (s === 'content' ? null : 'content'))
-        }
-        title={`📝 ${t('broadcast.composer.text')}`}
-        badge={
-          <span className="rounded-full bg-tg-secondary-bg px-2 py-0.5 text-[10px] text-tg-subtitle-text">
-            {state.text.length}
-          </span>
-        }
-      >
-        {/* Parse mode toggle */}
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {(['HTML', 'MarkdownV2', 'plain'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setParseMode(m)}
-              className={[
-                'press-scale rounded-full px-2.5 py-1 text-[10px] font-semibold',
-                state.parse_mode === m
-                  ? 'bg-gradient-hero text-white shadow-soft'
-                  : 'bg-tg-secondary-bg text-tg-subtitle-text',
-              ].join(' ')}
-            >
-              {m === 'plain' ? 'Plain' : m}
-            </button>
-          ))}
-        </div>
-
-        {/* Format chips */}
+      {/* Hero textarea + format bar (the only thing 80% of users touch) */}
+      <Card padding="sm" className="mb-2">
         {formatChips.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-1">
             {formatChips.map((c) => (
@@ -614,9 +499,20 @@ export function BroadcastComposer(): JSX.Element {
                 key={c.label}
                 type="button"
                 onClick={() => wrap(c.wrap[0], c.wrap[1])}
-                className="press-scale rounded-md bg-tg-secondary-bg px-2 py-1 font-mono text-[10px] font-semibold text-tg-link"
+                className="press-scale rounded-md bg-tg-secondary-bg px-2 py-1 font-mono text-[11px] font-semibold text-tg-link"
               >
                 {c.label}
+              </button>
+            ))}
+            <span className="mx-1 h-5 w-px bg-tg-secondary-bg" aria-hidden="true" />
+            {(['{{first_name}}', '{{username}}'] as const).map((tok) => (
+              <button
+                key={tok}
+                type="button"
+                onClick={() => insertToken(tok)}
+                className="press-scale rounded-md bg-tg-secondary-bg px-2 py-1 font-mono text-[10px] text-tg-subtitle-text hover:text-tg-link"
+              >
+                {tok}
               </button>
             ))}
           </div>
@@ -630,209 +526,263 @@ export function BroadcastComposer(): JSX.Element {
           rows={6}
           className="w-full resize-none rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-sm text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
         />
+      </Card>
 
-        {/* Template variable chips */}
-        <div className="mt-2 flex flex-wrap gap-1">
-          {templateChips.map((c) => (
-            <button
-              key={c.token}
-              type="button"
-              onClick={() => insertToken(c.token)}
-              className="press-scale rounded-full bg-tg-secondary-bg px-2 py-0.5 font-mono text-[9px] text-tg-subtitle-text hover:text-tg-link"
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Flags */}
-        <div className="mt-3 grid grid-cols-2 gap-x-2 gap-y-1.5 text-[11px]">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={state.silent}
-              onChange={(e) => setState((s) => ({ ...s, silent: e.target.checked }))}
-            />
-            🔕 {t('broadcast.composer.flags.silent')}
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={state.protect_content}
-              onChange={(e) => setState((s) => ({ ...s, protect_content: e.target.checked }))}
-            />
-            🔒 {t('broadcast.composer.flags.protect')}
-          </label>
-          <label className="flex items-center gap-2 col-span-2">
-            <input
-              type="checkbox"
-              checked={state.disable_web_page_preview}
-              onChange={(e) =>
-                setState((s) => ({ ...s, disable_web_page_preview: e.target.checked }))
-              }
-            />
-            🚫 {t('broadcast.composer.flags.no_preview')}
-          </label>
-        </div>
-      </Accordion>
-
-      {/* Media */}
-      <Accordion
-        open={openSection === 'media'}
-        onToggle={() => setOpenSection((s) => (s === 'media' ? null : 'media'))}
-        title={`🖼️ ${t('broadcast.composer.media')}`}
-        badge={
-          state.media_type !== '' ? (
-            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-              {state.media_type}
-            </span>
-          ) : null
-        }
-      >
-        <div className="grid grid-cols-5 gap-1.5 text-[11px]">
-          {(['', 'photo', 'video', 'document', 'animation'] as const).map((m) => (
-            <button
-              key={m || 'none'}
-              type="button"
-              onClick={() => setState((s) => ({ ...s, media_type: m }))}
-              className={[
-                'press-scale rounded-full px-2 py-1 font-semibold',
-                state.media_type === m
-                  ? 'bg-gradient-hero text-white shadow-soft'
-                  : 'bg-tg-secondary-bg text-tg-subtitle-text',
-              ].join(' ')}
-            >
-              {m === '' ? t('broadcast.composer.media_none') : m}
-            </button>
-          ))}
-        </div>
-        {state.media_type !== '' ? (
-          <input
-            value={state.media_file_id}
-            onChange={(e) => setState((s) => ({ ...s, media_file_id: e.target.value }))}
-            placeholder={t('broadcast.composer.media_file_id_placeholder')}
-            className="mt-2 w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 font-mono text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
-          />
+      {/* Status row — single line summarizing every important setting */}
+      <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px]">
+        <span
+          className={[
+            'rounded-full px-2.5 py-1 font-semibold',
+            audienceCount === null || audienceCount === 0
+              ? 'bg-tg-destructive-text/10 text-tg-destructive-text'
+              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+          ].join(' ')}
+        >
+          👥 {audiencePill}
+        </span>
+        {scheduledLabel ? (
+          <span className="rounded-full bg-blue-500/10 px-2.5 py-1 font-semibold text-blue-600 dark:text-blue-400">
+            ⏰ {scheduledLabel}
+          </span>
         ) : null}
-        <p className="mt-2 text-[10px] text-tg-hint">
-          {t('broadcast.composer.media_hint')}
-        </p>
-      </Accordion>
-
-      {/* Buttons */}
-      <Accordion
-        open={openSection === 'buttons'}
-        onToggle={() =>
-          setOpenSection((s) => (s === 'buttons' ? null : 'buttons'))
-        }
-        title={`🔘 ${t('broadcast.composer.buttons')}`}
-        badge={
-          buttonsBadge ? (
-            <span className="rounded-full bg-tg-link/10 px-2 py-0.5 text-[10px] font-semibold text-tg-link">
-              {buttonsBadge}
-            </span>
-          ) : null
-        }
-      >
+        {state.media_type !== '' ? (
+          <span className="rounded-full bg-tg-secondary-bg px-2.5 py-1 font-semibold text-tg-subtitle-text">
+            🖼️ {state.media_type}
+          </span>
+        ) : null}
+        {cleanedPreviewButtons.length > 0 ? (
+          <span className="rounded-full bg-tg-secondary-bg px-2.5 py-1 font-semibold text-tg-subtitle-text">
+            🔘 {cleanedPreviewButtons.flat().length}
+          </span>
+        ) : null}
         <button
           type="button"
-          onClick={addButtonRow}
-          className="press-scale w-full rounded-xl bg-tg-secondary-bg px-3 py-2 text-[11px] font-semibold text-tg-link"
+          onClick={() => setOptionsOpen((v) => !v)}
+          className="press-scale ml-auto rounded-full bg-tg-secondary-bg px-2.5 py-1 font-semibold text-tg-link"
         >
-          + {t('broadcast.composer.add_row')}
+          {optionsOpen ? '▴' : '▾'} {t('broadcast.composer.more_options')}
         </button>
-        {state.buttons.length === 0 ? (
-          <p className="mt-2 text-[11px] text-tg-hint">
-            {t('broadcast.composer.buttons_empty')}
-          </p>
-        ) : (
-          <div className="mt-2 space-y-2">
-            {state.buttons.map((row, ri) => (
-              <div key={ri} className="rounded-xl bg-tg-secondary-bg/60 p-2">
-                {row.map((btn, ci) => (
-                  <div key={ci} className="mb-1.5 flex gap-1.5">
-                    <input
-                      value={btn.text}
-                      onChange={(e) => updateButton(ri, ci, { text: e.target.value })}
-                      placeholder={t('broadcast.composer.button_text')}
-                      className="flex-1 rounded-lg border border-black/10 bg-tg-bg px-2 py-1.5 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
-                    />
-                    <input
-                      value={btn.url}
-                      onChange={(e) => updateButton(ri, ci, { url: e.target.value })}
-                      placeholder="https://"
-                      className="flex-[1.5] rounded-lg border border-black/10 bg-tg-bg px-2 py-1.5 text-xs text-tg-link placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeButton(ri, ci)}
-                      className="press-scale rounded-lg bg-tg-destructive-text/10 px-2 text-xs font-semibold text-tg-destructive-text"
-                      aria-label={t('broadcast.composer.remove_button')}
-                    >
-                      ×
-                    </button>
-                  </div>
+      </div>
+
+      {/* Single "More options" panel — every advanced control lives here */}
+      {optionsOpen ? (
+        <Card padding="md" className="mb-3 space-y-4 animate-fade-up">
+          {/* Bot picker — only useful with multiple bots */}
+          {bots.length > 1 ? (
+            <Section title={t('broadcast.composer.bot')}>
+              <select
+                value={state.bot_id ?? ''}
+                onChange={(e) => setBotId(Number.parseInt(e.target.value, 10))}
+                className="w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-sm text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
+              >
+                <option value="">{t('broadcast.composer.bot_placeholder')}</option>
+                {bots.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    @{b.username}
+                    {b.display_name ? ` · ${b.display_name}` : ''}
+                  </option>
                 ))}
+              </select>
+            </Section>
+          ) : null}
+
+          {/* Format mode */}
+          <Section title={t('broadcast.composer.format_mode')}>
+            <div className="flex flex-wrap gap-1.5">
+              {(['HTML', 'MarkdownV2', 'plain'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setParseMode(m)}
+                  className={[
+                    'press-scale rounded-full px-3 py-1 text-[11px] font-semibold',
+                    state.parse_mode === m
+                      ? 'bg-gradient-hero text-white shadow-soft'
+                      : 'bg-tg-secondary-bg text-tg-subtitle-text',
+                  ].join(' ')}
+                >
+                  {m === 'plain' ? 'Plain' : m}
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          {/* Audience filter */}
+          <Section title={t('broadcast.composer.audience')}>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={state.audience.locale}
+                onChange={(e) =>
+                  setAudience({ locale: e.target.value as BroadcastAudience['locale'] })
+                }
+                className="w-full rounded-lg border border-black/10 bg-tg-secondary-bg px-2 py-1.5 text-xs text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
+              >
+                <option value="all">🌐 {t('broadcast.composer.locale_all')}</option>
+                <option value="en">🇬🇧 English</option>
+                <option value="th">🇹🇭 ไทย</option>
+              </select>
+              <select
+                value={state.audience.role}
+                onChange={(e) =>
+                  setAudience({ role: e.target.value as BroadcastAudience['role'] })
+                }
+                className="w-full rounded-lg border border-black/10 bg-tg-secondary-bg px-2 py-1.5 text-xs text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
+              >
+                <option value="all">{t('broadcast.composer.role_all')}</option>
+                <option value="user">user</option>
+                <option value="super_admin">super_admin</option>
+              </select>
+            </div>
+            <input
+              type="number"
+              min={1}
+              value={state.audience.registered_within_days ?? ''}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10);
+                setAudience({
+                  registered_within_days: Number.isFinite(n) && n > 0 ? n : null,
+                });
+              }}
+              placeholder={t('broadcast.composer.registered_within_placeholder')}
+              className="mt-2 w-full rounded-lg border border-black/10 bg-tg-secondary-bg px-2 py-1.5 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+            />
+            <textarea
+              rows={2}
+              value={userIdsCsv}
+              onChange={onUserIdsChange}
+              placeholder={t('broadcast.composer.user_ids_placeholder')}
+              className="mt-2 w-full resize-none rounded-lg border border-black/10 bg-tg-secondary-bg px-2 py-1.5 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+            />
+          </Section>
+
+          {/* Schedule */}
+          <Section title={t('broadcast.composer.schedule')}>
+            <div className="flex gap-2">
+              <input
+                type="datetime-local"
+                value={state.scheduled_at}
+                onChange={(e) => setState((s) => ({ ...s, scheduled_at: e.target.value }))}
+                className="flex-1 rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-1.5 text-xs text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
+              />
+              {state.scheduled_at ? (
                 <button
                   type="button"
-                  onClick={() => addButtonToRow(ri)}
-                  className="press-scale w-full rounded-lg bg-tg-bg/50 px-2 py-1 text-[10px] font-semibold text-tg-link"
+                  onClick={() => setState((s) => ({ ...s, scheduled_at: '' }))}
+                  className="press-scale rounded-xl bg-tg-secondary-bg px-3 text-xs font-semibold text-tg-subtitle-text"
                 >
-                  + {t('broadcast.composer.add_button')}
+                  ×
                 </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Accordion>
+              ) : null}
+            </div>
+          </Section>
 
-      {/* Audience */}
-      <Accordion
-        open={openSection === 'audience'}
-        onToggle={() =>
-          setOpenSection((s) => (s === 'audience' ? null : 'audience'))
-        }
-        title={`👥 ${t('broadcast.composer.audience')}`}
-        badge={
-          audienceBadge ? (
-            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-              {audienceBadge} {t('broadcast.composer.recipients')}
-            </span>
-          ) : null
-        }
-      >
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block">
-            <span className="text-[10px] text-tg-hint">{t('broadcast.composer.locale')}</span>
-            <select
-              value={state.audience.locale}
-              onChange={(e) =>
-                setAudience({ locale: e.target.value as BroadcastAudience['locale'] })
-              }
-              className="mt-1 w-full rounded-lg border border-black/10 bg-tg-secondary-bg px-2 py-1.5 text-xs text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
+          {/* Media */}
+          <Section title={t('broadcast.composer.media')}>
+            <div className="grid grid-cols-5 gap-1.5 text-[11px]">
+              {(['', 'photo', 'video', 'document', 'animation'] as const).map((m) => (
+                <button
+                  key={m || 'none'}
+                  type="button"
+                  onClick={() => setState((s) => ({ ...s, media_type: m }))}
+                  className={[
+                    'press-scale rounded-full px-2 py-1 font-semibold',
+                    state.media_type === m
+                      ? 'bg-gradient-hero text-white shadow-soft'
+                      : 'bg-tg-secondary-bg text-tg-subtitle-text',
+                  ].join(' ')}
+                >
+                  {m === '' ? t('broadcast.composer.media_none') : m}
+                </button>
+              ))}
+            </div>
+            {state.media_type !== '' ? (
+              <input
+                value={state.media_file_id}
+                onChange={(e) => setState((s) => ({ ...s, media_file_id: e.target.value }))}
+                placeholder={t('broadcast.composer.media_file_id_placeholder')}
+                className="mt-2 w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 font-mono text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+              />
+            ) : null}
+          </Section>
+
+          {/* Inline buttons */}
+          <Section title={t('broadcast.composer.buttons')}>
+            <button
+              type="button"
+              onClick={addButtonRow}
+              className="press-scale w-full rounded-xl bg-tg-secondary-bg px-3 py-1.5 text-[11px] font-semibold text-tg-link"
             >
-              <option value="all">{t('broadcast.composer.locale_all')}</option>
-              <option value="en">English</option>
-              <option value="th">ไทย</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-[10px] text-tg-hint">{t('broadcast.composer.role')}</span>
-            <select
-              value={state.audience.role}
-              onChange={(e) =>
-                setAudience({ role: e.target.value as BroadcastAudience['role'] })
-              }
-              className="mt-1 w-full rounded-lg border border-black/10 bg-tg-secondary-bg px-2 py-1.5 text-xs text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
-            >
-              <option value="all">{t('broadcast.composer.role_all')}</option>
-              <option value="user">user</option>
-              <option value="super_admin">super_admin</option>
-            </select>
-          </label>
-        </div>
-        <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-          <label className="flex items-center gap-2">
+              + {t('broadcast.composer.add_row')}
+            </button>
+            {state.buttons.length > 0 ? (
+              <div className="mt-2 space-y-2">
+                {state.buttons.map((row, ri) => (
+                  <div key={ri} className="rounded-xl bg-tg-secondary-bg/60 p-2">
+                    {row.map((btn, ci) => (
+                      <div key={ci} className="mb-1 flex gap-1.5">
+                        <input
+                          value={btn.text}
+                          onChange={(e) => updateButton(ri, ci, { text: e.target.value })}
+                          placeholder={t('broadcast.composer.button_text')}
+                          className="flex-1 rounded-lg border border-black/10 bg-tg-bg px-2 py-1.5 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+                        />
+                        <input
+                          value={btn.url}
+                          onChange={(e) => updateButton(ri, ci, { url: e.target.value })}
+                          placeholder="https://"
+                          className="flex-[1.5] rounded-lg border border-black/10 bg-tg-bg px-2 py-1.5 text-xs text-tg-link placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeButton(ri, ci)}
+                          className="press-scale rounded-lg bg-tg-destructive-text/10 px-2 text-xs font-semibold text-tg-destructive-text"
+                          aria-label={t('broadcast.composer.remove_button')}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </Section>
+
+          {/* Flags */}
+          <Section title={t('broadcast.composer.flags')}>
+            <div className="grid grid-cols-1 gap-1.5 text-[11px]">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={state.silent}
+                  onChange={(e) => setState((s) => ({ ...s, silent: e.target.checked }))}
+                />
+                🔕 {t('broadcast.composer.flags.silent')}
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={state.protect_content}
+                  onChange={(e) =>
+                    setState((s) => ({ ...s, protect_content: e.target.checked }))
+                  }
+                />
+                🔒 {t('broadcast.composer.flags.protect')}
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={state.disable_web_page_preview}
+                  onChange={(e) =>
+                    setState((s) => ({ ...s, disable_web_page_preview: e.target.checked }))
+                  }
+                />
+                🚫 {t('broadcast.composer.flags.no_preview')}
+              </label>
+            </div>
+          </Section>
+
+          <label className="flex items-center gap-2 text-[11px]">
             <input
               type="checkbox"
               checked={state.audience.exclude_banned}
@@ -840,7 +790,7 @@ export function BroadcastComposer(): JSX.Element {
             />
             {t('broadcast.composer.exclude_banned')}
           </label>
-          <label className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-[11px]">
             <input
               type="checkbox"
               checked={state.audience.exclude_unsubscribed}
@@ -848,115 +798,20 @@ export function BroadcastComposer(): JSX.Element {
             />
             {t('broadcast.composer.exclude_unsubscribed')}
           </label>
-        </div>
+        </Card>
+      ) : null}
 
-        <label className="mt-2 block">
-          <span className="text-[10px] text-tg-hint">
-            {t('broadcast.composer.registered_within')}
-          </span>
-          <input
-            type="number"
-            min={1}
-            value={state.audience.registered_within_days ?? ''}
-            onChange={(e) => {
-              const n = Number.parseInt(e.target.value, 10);
-              setAudience({
-                registered_within_days: Number.isFinite(n) && n > 0 ? n : null,
-              });
-            }}
-            placeholder={t('broadcast.composer.registered_within_placeholder')}
-            className="mt-1 w-full rounded-lg border border-black/10 bg-tg-secondary-bg px-2 py-1.5 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
-          />
-        </label>
-
-        <label className="mt-2 block">
-          <span className="text-[10px] text-tg-hint">{t('broadcast.composer.user_ids')}</span>
-          <textarea
-            rows={2}
-            value={userIdsCsv}
-            onChange={onUserIdsChange}
-            placeholder={t('broadcast.composer.user_ids_placeholder')}
-            className="mt-1 w-full resize-none rounded-lg border border-black/10 bg-tg-secondary-bg px-2 py-1.5 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
-          />
-        </label>
-
-        {/* Inline live audience preview */}
-        <div className="mt-3 rounded-xl bg-tg-secondary-bg/60 p-2 text-[11px]">
-          {audienceQuery.isLoading ? (
-            <p className="text-tg-hint">…</p>
-          ) : audienceCount === null ? (
-            <p className="text-tg-hint">{t('broadcast.composer.audience_pick_bot')}</p>
-          ) : audienceCount === 0 ? (
-            <p className="text-tg-destructive-text">
-              {t('broadcast.composer.audience_empty')}
-            </p>
-          ) : (
-            <>
-              <p className="font-semibold text-tg-text">
-                {audienceCount.toLocaleString()} {t('broadcast.composer.recipients')}
-              </p>
-              {audienceSample.length > 0 ? (
-                <ul className="mt-1 space-y-0.5 text-tg-subtitle-text">
-                  {audienceSample.map((u) => (
-                    <li key={u.id} className="truncate">
-                      {u.username ? `@${u.username}` : `#${u.id}`}
-                      {u.first_name ? ` · ${u.first_name}` : ''}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
-          )}
-        </div>
-      </Accordion>
-
-      {/* Schedule */}
-      <Accordion
-        open={openSection === 'schedule'}
-        onToggle={() =>
-          setOpenSection((s) => (s === 'schedule' ? null : 'schedule'))
-        }
-        title={`⏰ ${t('broadcast.composer.schedule')}`}
-        badge={
-          state.scheduled_at ? (
-            <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
-              {new Date(state.scheduled_at).toLocaleString()}
-            </span>
-          ) : null
-        }
-      >
-        <input
-          type="datetime-local"
-          value={state.scheduled_at}
-          onChange={(e) => setState((s) => ({ ...s, scheduled_at: e.target.value }))}
-          className="w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-sm text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
-        />
-        {state.scheduled_at ? (
-          <button
-            type="button"
-            onClick={() => setState((s) => ({ ...s, scheduled_at: '' }))}
-            className="press-scale mt-2 w-full rounded-xl bg-tg-secondary-bg px-3 py-1.5 text-[11px] font-semibold text-tg-subtitle-text"
-          >
-            {t('broadcast.composer.clear_schedule')}
-          </button>
-        ) : null}
-        <p className="mt-2 text-[10px] text-tg-hint">
-          {t('broadcast.composer.schedule_dialog.message')}
-        </p>
-      </Accordion>
-
-      {/* Sticky action bar */}
+      {/* Sticky bottom bar */}
       <div className="sticky bottom-3 z-10 mt-4 flex flex-col gap-2 rounded-2xl bg-tg-bg/95 p-2 shadow-glow backdrop-blur">
         <div className="flex gap-2">
           <Button
             variant="secondary"
             size="sm"
-            block
             onClick={() => saveDraft.mutate()}
             loading={saveDraft.isPending}
             disabled={state.bot_id === null || state.text.trim().length === 0}
           >
-            💾 {t('broadcast.composer.save_draft')}
+            💾
           </Button>
           <Button
             variant="primary"
@@ -967,29 +822,26 @@ export function BroadcastComposer(): JSX.Element {
                 ? schedule.mutate(new Date(state.scheduled_at).toISOString())
                 : setConfirmOpen(true)
             }
-            disabled={
-              state.bot_id === null ||
-              state.text.trim().length === 0 ||
-              audienceCount === 0
-            }
+            disabled={sendDisabled}
             loading={schedule.isPending}
           >
             {state.scheduled_at
               ? `⏰ ${t('broadcast.composer.schedule')}`
+              : audienceCount && audienceCount > 0
+              ? `🚀 ${t('broadcast.composer.send_to', { n: audienceCount.toLocaleString() })}`
               : `🚀 ${t('broadcast.composer.send_now')}`}
           </Button>
+          {isEditing ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => deleteDraft.mutate()}
+              loading={deleteDraft.isPending}
+            >
+              🗑
+            </Button>
+          ) : null}
         </div>
-        {isEditing ? (
-          <Button
-            variant="destructive"
-            size="sm"
-            block
-            onClick={() => deleteDraft.mutate()}
-            loading={deleteDraft.isPending}
-          >
-            🗑 {t('broadcast.composer.delete_draft')}
-          </Button>
-        ) : null}
       </div>
 
       <ConfirmDialog
@@ -999,10 +851,7 @@ export function BroadcastComposer(): JSX.Element {
           <>
             <p>
               {t('broadcast.composer.confirm.message', {
-                n:
-                  audienceCount !== null
-                    ? audienceCount.toLocaleString()
-                    : '?',
+                n: audienceCount !== null ? audienceCount.toLocaleString() : '?',
               })}
             </p>
             <p className="mt-2 text-tg-destructive-text">
@@ -1026,5 +875,17 @@ export function BroadcastComposer(): JSX.Element {
         }}
       />
     </Layout>
+  );
+}
+
+/** Tiny labeled section inside the "More options" panel. */
+function Section({ title, children }: { title: string; children: ReactNode }): JSX.Element {
+  return (
+    <div>
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-tg-hint">
+        {title}
+      </p>
+      {children}
+    </div>
   );
 }
