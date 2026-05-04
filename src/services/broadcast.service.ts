@@ -149,16 +149,40 @@ export class BroadcastService {
     }
   }
 
-  private validateButtons(buttons: BroadcastButton[][] | null | undefined): void {
-    if (!buttons) return;
-    if (buttons.length > MAX_BUTTON_ROWS) {
+  /**
+   * Validate the inline-keyboard matrix. Half-filled rows (an "Add row"
+   * tap with no follow-up) are silently dropped so the composer doesn't
+   * fail-on-save when a user is mid-edit; only completely-empty buttons
+   * with a non-empty url, or vice versa, are surfaced as errors. Returns
+   * the cleaned matrix or `null` when nothing remains.
+   */
+  private validateButtons(
+    buttons: BroadcastButton[][] | null | undefined,
+  ): BroadcastButton[][] | null {
+    if (!buttons) return null;
+    const cleaned: BroadcastButton[][] = [];
+    for (const row of buttons) {
+      const r: BroadcastButton[] = [];
+      for (const btn of row) {
+        const text = (btn.text ?? '').trim();
+        const url = (btn.url ?? '').trim();
+        if (text.length === 0 && url.length === 0) continue; // empty slot — drop silently
+        if (text.length === 0) {
+          throw new AppError(ErrorCode.INVALID_INPUT, 'Button text is empty.', { expose: true });
+        }
+        r.push({ text, url });
+      }
+      if (r.length > 0) cleaned.push(r);
+    }
+    if (cleaned.length === 0) return null;
+    if (cleaned.length > MAX_BUTTON_ROWS) {
       throw new AppError(
         ErrorCode.INVALID_INPUT,
         `Inline keyboard exceeds ${MAX_BUTTON_ROWS} rows.`,
-        { expose: true, meta: { rows: buttons.length } },
+        { expose: true, meta: { rows: cleaned.length } },
       );
     }
-    for (const row of buttons) {
+    for (const row of cleaned) {
       if (row.length > MAX_BUTTONS_PER_ROW) {
         throw new AppError(
           ErrorCode.INVALID_INPUT,
@@ -167,9 +191,6 @@ export class BroadcastService {
         );
       }
       for (const btn of row) {
-        if (!btn.text || btn.text.trim().length === 0) {
-          throw new AppError(ErrorCode.INVALID_INPUT, 'Button text is empty.', { expose: true });
-        }
         if (btn.text.length > MAX_BUTTON_TEXT_LEN) {
           throw new AppError(
             ErrorCode.INVALID_INPUT,
@@ -199,6 +220,7 @@ export class BroadcastService {
         }
       }
     }
+    return cleaned;
   }
 
   /** Audience JSON shape is simple but values come from the network — guard. */
@@ -237,7 +259,7 @@ export class BroadcastService {
     this.validateAudience(audience);
     const hasMedia = input.media_type !== null && input.media_type !== undefined;
     this.validateText(input.text, hasMedia);
-    this.validateButtons(input.buttons ?? null);
+    const cleanedButtons = this.validateButtons(input.buttons ?? null);
 
     const insert: InsertBroadcastInput = {
       bot_id: bot.id,
@@ -246,7 +268,7 @@ export class BroadcastService {
       parse_mode: input.parse_mode ?? null,
       media_type: input.media_type ?? null,
       media_file_id: input.media_file_id ?? null,
-      buttons: input.buttons ?? null,
+      buttons: cleanedButtons,
       disable_web_page_preview: input.disable_web_page_preview ?? false,
       protect_content: input.protect_content ?? false,
       silent: input.silent ?? false,
@@ -261,7 +283,7 @@ export class BroadcastService {
       metadata: {
         bot_id: bot.id,
         has_media: hasMedia,
-        has_buttons: input.buttons !== null && input.buttons !== undefined,
+        has_buttons: cleanedButtons !== null,
       },
     });
     return row;
@@ -289,7 +311,11 @@ export class BroadcastService {
         patch.media_type !== undefined ? patch.media_type !== null : existing.media_type !== null;
       this.validateText(patch.text, hasMedia);
     }
-    if (patch.buttons !== undefined) this.validateButtons(patch.buttons ?? null);
+    if (patch.buttons !== undefined) {
+      const cleaned = this.validateButtons(patch.buttons ?? null);
+      // Persist the cleaned form so half-filled rows don't survive across saves.
+      patch = { ...patch, buttons: cleaned };
+    }
     return this.repo.updateDraft(id, patch);
   }
 
@@ -355,6 +381,31 @@ export class BroadcastService {
   audiencePreview(actor: UserRow, id: number, sampleSize = 5): AudiencePreview {
     const row = this.getById(actor, id);
     const audience = parseAudience(row.audience_json);
+    const count = this.repo.audienceCount(audience);
+    const sample = this.repo.audienceSample(audience, sampleSize);
+    return { count, sample };
+  }
+
+  /**
+   * Stateless audience preview — composer-friendly. Lets the live count
+   * tick in the Mini App without a save → preview round-trip. Permission
+   * is checked against the bot the operator named, not against an existing
+   * row, so a typo on `bot_id` is rejected the same as anywhere else.
+   */
+  audiencePreviewFor(
+    actor: UserRow,
+    botId: number,
+    audience: BroadcastAudience,
+    sampleSize = 5,
+  ): AudiencePreview {
+    const bot = this.bots.findById(botId);
+    if (!bot) {
+      throw new AppError(ErrorCode.BOT_NOT_FOUND, `bot ${botId} not found`, {
+        meta: { bot_id: botId },
+      });
+    }
+    this.assertCanUseBot(actor, bot);
+    this.validateAudience(audience);
     const count = this.repo.audienceCount(audience);
     const sample = this.repo.audienceSample(audience, sampleSize);
     return { count, sample };

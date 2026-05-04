@@ -1,25 +1,38 @@
 /**
- * VaultLink Mini App — broadcast composer.
+ * VaultLink Mini App — broadcast composer (v0.3.1 redesign).
  *
- * Single-screen create / edit-draft form. Strategy: keep state local in
- * a ref-shaped object so re-renders don't churn the textarea, then
- * serialize on every save / preview. The page covers:
+ * Two-pane layout:
  *
- *   - bot picker (founder lists every bot; non-founder lists their own)
- *   - text + parse_mode + flags
- *   - inline buttons editor (rows × columns)
- *   - audience filter (locale, role, exclude flags, registered-within,
- *     explicit user_ids list)
- *   - live audience preview (count + 5 sample users)
- *   - "Save draft" / "Send now" / "Schedule"
- *   - typed confirmation dialog before send
+ *  ┌──────────────────────────────┐  ← sticky live preview (1:1 Telegram bubble)
+ *  │  MessagePreview              │
+ *  └──────────────────────────────┘
+ *  ┌──────────────────────────────┐  ← form, organized as 5 collapsible
+ *  │  ▾ Content                   │     accordion sections so the page
+ *  │     [textarea + chips]       │     doesn't scroll forever.
+ *  │  ▸ Media                     │
+ *  │  ▸ Buttons                   │
+ *  │  ▸ Audience  (live count)    │
+ *  │  ▸ Schedule                  │
+ *  └──────────────────────────────┘
+ *  ┌──────────────────────────────┐  ← sticky action bar
+ *  │  Save · Send · Schedule · ✗  │
+ *  └──────────────────────────────┘
  *
- * The composer treats `text + buttons + media + flags` as a single
- * "content" object and `audience` as a separate object — the backend
- * accepts both as a single PATCH so partial saves don't surprise users.
+ * Live preview re-renders on every keystroke. Audience count is fetched
+ * via the stateless `POST /broadcasts/preview-audience` endpoint with a
+ * 500 ms debounce so a fast typist doesn't hammer the server. The
+ * recipient sample (5 users) is rendered alongside the count so the
+ * operator sees who they're actually about to message.
  */
 
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Layout } from '../components/Layout.js';
@@ -28,10 +41,12 @@ import { Button } from '../components/Button.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { SkeletonList } from '../components/SkeletonCard.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
+import { MessagePreview } from '../components/MessagePreview.js';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api.js';
 import { qk } from '../lib/queryKeys.js';
 import { useT } from '../lib/i18n.js';
 import { hapticNotify } from '../lib/telegram.js';
+import { useAuth } from '../providers/AuthProvider.js';
 import type {
   BotSummary,
   BroadcastAudience,
@@ -94,18 +109,30 @@ function rowToState(row: BroadcastRow): ComposerState {
   };
 }
 
-/** The DB and API accept null parse_mode for "plain"; the UI uses 'plain' as
- * a sentinel so the radio knob reads cleanly. Translate on the way out. */
+/** Strip half-filled rows so a "+ Add row" tap doesn't ride into the
+ * server. Backend tolerates this too, but doing it here means the
+ * preview also matches what the recipient will see. */
+function cleanButtons(buttons: BroadcastButton[][]): BroadcastButton[][] {
+  return buttons
+    .map((row) =>
+      row
+        .map((b) => ({ text: b.text.trim(), url: b.url.trim() }))
+        .filter((b) => b.text.length > 0 && b.url.length > 0),
+    )
+    .filter((row) => row.length > 0);
+}
+
 function stateToPayload(s: ComposerState): Record<string, unknown> {
   const audience: BroadcastAudience = {
     ...s.audience,
     user_ids: s.audience.user_ids.filter((u) => u.trim().length > 0),
   };
+  const cleanedButtons = cleanButtons(s.buttons);
   return {
     bot_id: s.bot_id,
     text: s.text,
     parse_mode: s.parse_mode === 'plain' ? null : s.parse_mode,
-    buttons: s.buttons.length > 0 ? s.buttons : null,
+    buttons: cleanedButtons.length > 0 ? cleanedButtons : null,
     media_type: s.media_type === '' ? null : s.media_type,
     media_file_id: s.media_file_id.trim() === '' ? null : s.media_file_id.trim(),
     disable_web_page_preview: s.disable_web_page_preview,
@@ -115,6 +142,90 @@ function stateToPayload(s: ComposerState): Record<string, unknown> {
   };
 }
 
+/* -------------------------------------------------------------------------- *
+ * Tiny debounce hook
+ * -------------------------------------------------------------------------- */
+
+function useDebounced<T>(value: T, delayMs: number): T {
+  const [out, setOut] = useState<T>(value);
+  useEffect(() => {
+    const id = window.setTimeout(() => setOut(value), delayMs);
+    return () => window.clearTimeout(id);
+  }, [value, delayMs]);
+  return out;
+}
+
+/* -------------------------------------------------------------------------- *
+ * Accordion section
+ * -------------------------------------------------------------------------- */
+
+interface AccordionProps {
+  open: boolean;
+  onToggle: () => void;
+  title: ReactNode;
+  badge?: ReactNode;
+  children: ReactNode;
+}
+
+function Accordion({ open, onToggle, title, badge, children }: AccordionProps): JSX.Element {
+  return (
+    <Card padding="none" className="mb-2 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="press-scale flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-tg-text">
+          <span
+            className={[
+              'inline-block transition-transform text-tg-subtitle-text',
+              open ? 'rotate-90' : '',
+            ].join(' ')}
+            aria-hidden="true"
+          >
+            ▸
+          </span>
+          {title}
+        </span>
+        {badge ? <span className="shrink-0">{badge}</span> : null}
+      </button>
+      {open ? <div className="px-3 pb-3 pt-0">{children}</div> : null}
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Insertion helpers — wrap selection or insert at cursor
+ * -------------------------------------------------------------------------- */
+
+function wrapSelection(
+  ta: HTMLTextAreaElement,
+  before: string,
+  after: string = before,
+): { value: string; selStart: number; selEnd: number } {
+  const start = ta.selectionStart ?? 0;
+  const end = ta.selectionEnd ?? 0;
+  const v = ta.value;
+  const next = `${v.slice(0, start)}${before}${v.slice(start, end)}${after}${v.slice(end)}`;
+  return { value: next, selStart: start + before.length, selEnd: end + before.length };
+}
+
+function insertAtCursor(
+  ta: HTMLTextAreaElement,
+  text: string,
+): { value: string; selStart: number; selEnd: number } {
+  const start = ta.selectionStart ?? ta.value.length;
+  const end = ta.selectionEnd ?? ta.value.length;
+  const v = ta.value;
+  const next = `${v.slice(0, start)}${text}${v.slice(end)}`;
+  const cursor = start + text.length;
+  return { value: next, selStart: cursor, selEnd: cursor };
+}
+
+/* -------------------------------------------------------------------------- *
+ * Composer page
+ * -------------------------------------------------------------------------- */
+
 export function BroadcastComposer(): JSX.Element {
   const t = useT();
   const navigate = useNavigate();
@@ -122,15 +233,18 @@ export function BroadcastComposer(): JSX.Element {
   const editingId = params.id ? Number.parseInt(params.id, 10) : null;
   const isEditing = editingId !== null && Number.isFinite(editingId);
   const qc = useQueryClient();
+  const { user: me } = useAuth();
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const [state, setState] = useState<ComposerState>(defaultState());
   const [hydrated, setHydrated] = useState(!isEditing);
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<BroadcastAudiencePreview | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [openSection, setOpenSection] = useState<
+    'content' | 'media' | 'buttons' | 'audience' | 'schedule' | null
+  >('content');
 
-  // Bot list — required for the picker. Founders see every bot.
+  // -------- bots (for picker) --------
   const botsQuery = useQuery({
     queryKey: ['bots-for-broadcast'],
     queryFn: () =>
@@ -140,7 +254,7 @@ export function BroadcastComposer(): JSX.Element {
   });
   const bots = botsQuery.data?.items ?? [];
 
-  // Hydrate the form from an existing draft.
+  // -------- hydrate draft --------
   const draftQuery = useQuery({
     queryKey: editingId ? qk.broadcasts.detail(editingId) : ['broadcast-noop'],
     enabled: isEditing,
@@ -153,12 +267,41 @@ export function BroadcastComposer(): JSX.Element {
     }
   }, [isEditing, draftQuery.data]);
 
-  // Default the bot to the first one once bots are loaded.
+  // -------- default bot picker --------
   useEffect(() => {
     if (!isEditing && state.bot_id === null && bots.length > 0 && bots[0]) {
       setState((s) => ({ ...s, bot_id: bots[0]!.id }));
     }
   }, [bots, state.bot_id, isEditing]);
+
+  // -------- debounced live audience preview --------
+  const debouncedAudience = useDebounced(state.audience, 500);
+  const debouncedBotId = useDebounced(state.bot_id, 500);
+  const audienceQuery = useQuery({
+    queryKey: [
+      'audience-live',
+      debouncedBotId,
+      debouncedAudience.locale,
+      debouncedAudience.role,
+      debouncedAudience.exclude_banned,
+      debouncedAudience.exclude_unsubscribed,
+      debouncedAudience.registered_within_days,
+      debouncedAudience.user_ids.length,
+      debouncedAudience.user_ids.join(','),
+    ],
+    enabled: debouncedBotId !== null,
+    staleTime: 5_000,
+    queryFn: () =>
+      apiPost<BroadcastAudiencePreview>('/broadcasts/preview-audience', {
+        bot_id: debouncedBotId,
+        audience: {
+          ...debouncedAudience,
+          user_ids: debouncedAudience.user_ids.filter((u) => u.trim().length > 0),
+        },
+      }),
+  });
+  const audienceCount = audienceQuery.data?.count ?? null;
+  const audienceSample = audienceQuery.data?.sample ?? [];
 
   /* --------------------------- mutations ------------------------------- */
 
@@ -177,29 +320,6 @@ export function BroadcastComposer(): JSX.Element {
       setError(null);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'save failed'),
-  });
-
-  const previewAudience = useMutation({
-    mutationFn: async (): Promise<BroadcastAudiencePreview> => {
-      // Save first if dirty so the server's preview uses the freshest draft.
-      let id = editingId;
-      if (!isEditing) {
-        const created = await apiPost<BroadcastRow>('/broadcasts', stateToPayload(state));
-        id = created.id;
-        navigate(`/admin/broadcasts/${id}/edit`, { replace: true });
-      } else {
-        await apiPatch(`/broadcasts/${id}`, stateToPayload(state));
-      }
-      return apiPost<BroadcastAudiencePreview>(
-        `/broadcasts/${id}/audience-preview`,
-        {},
-      );
-    },
-    onSuccess: (p) => {
-      setPreview(p);
-      setError(null);
-    },
-    onError: (err) => setError(err instanceof Error ? err.message : 'preview failed'),
   });
 
   const sendNow = useMutation({
@@ -301,7 +421,52 @@ export function BroadcastComposer(): JSX.Element {
     setAudience({ user_ids: list });
   };
 
-  const errBanner = error || saveDraft.error || sendNow.error || previewAudience.error;
+  // Insert a wrapping pair at the cursor for HTML/Markdown formatting.
+  const wrap = (before: string, after?: string): void => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const next = wrapSelection(ta, before, after);
+    setText(next.value);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(next.selStart, next.selEnd);
+    });
+  };
+
+  // Insert a literal token (template var or chip text) at the cursor.
+  const insertToken = (token: string): void => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const next = insertAtCursor(ta, token);
+    setText(next.value);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(next.selStart, next.selEnd);
+    });
+  };
+
+  /* --------------------------- preview props ------------------------------- */
+
+  const selectedBot = useMemo(
+    () => bots.find((b) => b.id === state.bot_id) ?? null,
+    [bots, state.bot_id],
+  );
+  const previewSampleUser = me
+    ? {
+        first_name: me.first_name,
+        last_name: me.last_name,
+        username: me.username,
+        telegram_user_id: me.telegram_user_id,
+      }
+    : { first_name: 'You', last_name: null, username: null, telegram_user_id: '0' };
+
+  const cleanedPreviewButtons = useMemo(() => cleanButtons(state.buttons), [state.buttons]);
+  const hasMedia =
+    state.media_type !== '' && state.media_file_id.trim().length > 0;
+
+  /* --------------------------- error banner ------------------------------- */
+
+  const errBanner = error || saveDraft.error || sendNow.error;
   const errMsg =
     errBanner instanceof Error ? errBanner.message : typeof errBanner === 'string' ? errBanner : '';
 
@@ -325,81 +490,170 @@ export function BroadcastComposer(): JSX.Element {
     );
   }
 
+  /* --------------------------- render ------------------------------- */
+
+  const formatChips = state.parse_mode === 'HTML'
+    ? [
+        { label: 'B', wrap: ['<b>', '</b>'] as const },
+        { label: 'I', wrap: ['<i>', '</i>'] as const },
+        { label: 'U', wrap: ['<u>', '</u>'] as const },
+        { label: 'S', wrap: ['<s>', '</s>'] as const },
+        { label: '</>', wrap: ['<code>', '</code>'] as const },
+        { label: '🔗', wrap: ['<a href="https://">', '</a>'] as const },
+      ]
+    : state.parse_mode === 'MarkdownV2'
+    ? [
+        { label: 'B', wrap: ['*', '*'] as const },
+        { label: 'I', wrap: ['_', '_'] as const },
+        { label: 'U', wrap: ['__', '__'] as const },
+        { label: 'S', wrap: ['~', '~'] as const },
+        { label: '</>', wrap: ['`', '`'] as const },
+        { label: '🔗', wrap: ['[', '](https://)'] as const },
+      ]
+    : [];
+
+  const templateChips: Array<{ label: string; token: string }> = [
+    { label: '{{first_name}}', token: '{{first_name}}' },
+    { label: '{{username}}', token: '{{username}}' },
+    { label: '{{full_name}}', token: '{{full_name}}' },
+    { label: '{{user_id}}', token: '{{user_id}}' },
+  ];
+
+  const showBotPicker = bots.length !== 1;
+  const audienceBadge = audienceQuery.isLoading
+    ? '…'
+    : audienceCount !== null
+    ? `${audienceCount.toLocaleString()}`
+    : '';
+  const buttonsBadge = cleanedPreviewButtons.length > 0 ? `${cleanedPreviewButtons.flat().length}` : '';
+
   return (
     <Layout title={t('broadcast.composer.title')} back={() => navigate(-1)} hideNav>
+      {/* Sticky preview pane — always visible while form scrolls */}
+      <div className="sticky top-0 z-10 -mx-4 mb-3 bg-tg-bg/90 px-4 py-2 backdrop-blur">
+        <MessagePreview
+          text={state.text}
+          parseMode={state.parse_mode}
+          buttons={cleanedPreviewButtons}
+          mediaType={state.media_type}
+          hasMedia={hasMedia}
+          botName={selectedBot?.display_name ?? selectedBot?.username ?? 'bot'}
+          botUsername={selectedBot?.username}
+          sampleUser={previewSampleUser}
+          mediaLabel={t('broadcast.composer.media')}
+        />
+      </div>
+
       {errMsg ? (
         <p className="mb-3 rounded-xl bg-tg-destructive-text/10 px-3 py-2 text-xs text-tg-destructive-text">
           {errMsg}
         </p>
       ) : null}
 
-      {/* ----- Bot picker ----- */}
-      <Card padding="sm" className="mb-3">
-        <label className="block">
-          <span className="text-[10px] uppercase tracking-wider text-tg-hint">
-            {t('broadcast.composer.bot')}
-          </span>
-          <select
-            value={state.bot_id ?? ''}
-            onChange={(e) => setBotId(Number.parseInt(e.target.value, 10))}
-            className="mt-1 w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-sm text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
-          >
-            <option value="">{t('broadcast.composer.bot_placeholder')}</option>
-            {bots.map((b) => (
-              <option key={b.id} value={b.id}>
-                @{b.username}
-                {b.display_name ? ` · ${b.display_name}` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-      </Card>
+      {/* Bot picker — only when more than 1 owned bot */}
+      {showBotPicker ? (
+        <Card padding="sm" className="mb-2">
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-tg-hint">
+              {t('broadcast.composer.bot')}
+            </span>
+            <select
+              value={state.bot_id ?? ''}
+              onChange={(e) => setBotId(Number.parseInt(e.target.value, 10))}
+              className="mt-1 w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-sm text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
+            >
+              <option value="">{t('broadcast.composer.bot_placeholder')}</option>
+              {bots.map((b) => (
+                <option key={b.id} value={b.id}>
+                  @{b.username}
+                  {b.display_name ? ` · ${b.display_name}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </Card>
+      ) : null}
 
-      {/* ----- Content ----- */}
-      <Card padding="sm" className="mb-3">
-        <label className="block">
-          <span className="text-[10px] uppercase tracking-wider text-tg-hint">
-            {t('broadcast.composer.text')}
+      {/* Content */}
+      <Accordion
+        open={openSection === 'content'}
+        onToggle={() =>
+          setOpenSection((s) => (s === 'content' ? null : 'content'))
+        }
+        title={`📝 ${t('broadcast.composer.text')}`}
+        badge={
+          <span className="rounded-full bg-tg-secondary-bg px-2 py-0.5 text-[10px] text-tg-subtitle-text">
+            {state.text.length}
           </span>
-          <textarea
-            value={state.text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={t('broadcast.composer.text_placeholder')}
-            rows={6}
-            className="mt-1 w-full resize-none rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-sm text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
-          />
-          <p className="mt-1 text-[10px] text-tg-hint">
-            {state.text.length} {t('broadcast.composer.chars')} ·{' '}
-            {t('broadcast.composer.template_hint')}
-          </p>
-        </label>
-
-        <div className="mt-3 flex flex-wrap gap-2">
+        }
+      >
+        {/* Parse mode toggle */}
+        <div className="mb-2 flex flex-wrap gap-1.5">
           {(['HTML', 'MarkdownV2', 'plain'] as const).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => setParseMode(m)}
               className={[
-                'press-scale rounded-full px-3 py-1 text-[11px] font-semibold',
+                'press-scale rounded-full px-2.5 py-1 text-[10px] font-semibold',
                 state.parse_mode === m
                   ? 'bg-gradient-hero text-white shadow-soft'
                   : 'bg-tg-secondary-bg text-tg-subtitle-text',
               ].join(' ')}
             >
-              {m}
+              {m === 'plain' ? 'Plain' : m}
             </button>
           ))}
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+        {/* Format chips */}
+        {formatChips.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-1">
+            {formatChips.map((c) => (
+              <button
+                key={c.label}
+                type="button"
+                onClick={() => wrap(c.wrap[0], c.wrap[1])}
+                className="press-scale rounded-md bg-tg-secondary-bg px-2 py-1 font-mono text-[10px] font-semibold text-tg-link"
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <textarea
+          ref={textareaRef}
+          value={state.text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={t('broadcast.composer.text_placeholder')}
+          rows={6}
+          className="w-full resize-none rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-sm text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+        />
+
+        {/* Template variable chips */}
+        <div className="mt-2 flex flex-wrap gap-1">
+          {templateChips.map((c) => (
+            <button
+              key={c.token}
+              type="button"
+              onClick={() => insertToken(c.token)}
+              className="press-scale rounded-full bg-tg-secondary-bg px-2 py-0.5 font-mono text-[9px] text-tg-subtitle-text hover:text-tg-link"
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Flags */}
+        <div className="mt-3 grid grid-cols-2 gap-x-2 gap-y-1.5 text-[11px]">
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={state.silent}
               onChange={(e) => setState((s) => ({ ...s, silent: e.target.checked }))}
             />
-            {t('broadcast.composer.flags.silent')}
+            🔕 {t('broadcast.composer.flags.silent')}
           </label>
           <label className="flex items-center gap-2">
             <input
@@ -407,7 +661,7 @@ export function BroadcastComposer(): JSX.Element {
               checked={state.protect_content}
               onChange={(e) => setState((s) => ({ ...s, protect_content: e.target.checked }))}
             />
-            {t('broadcast.composer.flags.protect')}
+            🔒 {t('broadcast.composer.flags.protect')}
           </label>
           <label className="flex items-center gap-2 col-span-2">
             <input
@@ -417,17 +671,25 @@ export function BroadcastComposer(): JSX.Element {
                 setState((s) => ({ ...s, disable_web_page_preview: e.target.checked }))
               }
             />
-            {t('broadcast.composer.flags.no_preview')}
+            🚫 {t('broadcast.composer.flags.no_preview')}
           </label>
         </div>
-      </Card>
+      </Accordion>
 
-      {/* ----- Media ----- */}
-      <Card padding="sm" className="mb-3">
-        <p className="text-[10px] uppercase tracking-wider text-tg-hint">
-          {t('broadcast.composer.media')}
-        </p>
-        <div className="mt-2 grid grid-cols-5 gap-1.5 text-[11px]">
+      {/* Media */}
+      <Accordion
+        open={openSection === 'media'}
+        onToggle={() => setOpenSection((s) => (s === 'media' ? null : 'media'))}
+        title={`🖼️ ${t('broadcast.composer.media')}`}
+        badge={
+          state.media_type !== '' ? (
+            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+              {state.media_type}
+            </span>
+          ) : null
+        }
+      >
+        <div className="grid grid-cols-5 gap-1.5 text-[11px]">
           {(['', 'photo', 'video', 'document', 'animation'] as const).map((m) => (
             <button
               key={m || 'none'}
@@ -449,28 +711,40 @@ export function BroadcastComposer(): JSX.Element {
             value={state.media_file_id}
             onChange={(e) => setState((s) => ({ ...s, media_file_id: e.target.value }))}
             placeholder={t('broadcast.composer.media_file_id_placeholder')}
-            className="mt-2 w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-xs text-tg-text font-mono placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+            className="mt-2 w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 font-mono text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
           />
         ) : null}
-        <p className="mt-2 text-[10px] text-tg-hint">{t('broadcast.composer.media_hint')}</p>
-      </Card>
+        <p className="mt-2 text-[10px] text-tg-hint">
+          {t('broadcast.composer.media_hint')}
+        </p>
+      </Accordion>
 
-      {/* ----- Inline buttons ----- */}
-      <Card padding="sm" className="mb-3">
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] uppercase tracking-wider text-tg-hint">
-            {t('broadcast.composer.buttons')}
-          </p>
-          <button
-            type="button"
-            onClick={addButtonRow}
-            className="press-scale rounded-full bg-tg-secondary-bg px-3 py-1 text-[11px] font-semibold text-tg-link"
-          >
-            + {t('broadcast.composer.add_row')}
-          </button>
-        </div>
+      {/* Buttons */}
+      <Accordion
+        open={openSection === 'buttons'}
+        onToggle={() =>
+          setOpenSection((s) => (s === 'buttons' ? null : 'buttons'))
+        }
+        title={`🔘 ${t('broadcast.composer.buttons')}`}
+        badge={
+          buttonsBadge ? (
+            <span className="rounded-full bg-tg-link/10 px-2 py-0.5 text-[10px] font-semibold text-tg-link">
+              {buttonsBadge}
+            </span>
+          ) : null
+        }
+      >
+        <button
+          type="button"
+          onClick={addButtonRow}
+          className="press-scale w-full rounded-xl bg-tg-secondary-bg px-3 py-2 text-[11px] font-semibold text-tg-link"
+        >
+          + {t('broadcast.composer.add_row')}
+        </button>
         {state.buttons.length === 0 ? (
-          <p className="mt-2 text-[11px] text-tg-hint">{t('broadcast.composer.buttons_empty')}</p>
+          <p className="mt-2 text-[11px] text-tg-hint">
+            {t('broadcast.composer.buttons_empty')}
+          </p>
         ) : (
           <div className="mt-2 space-y-2">
             {state.buttons.map((row, ri) => (
@@ -510,15 +784,24 @@ export function BroadcastComposer(): JSX.Element {
             ))}
           </div>
         )}
-      </Card>
+      </Accordion>
 
-      {/* ----- Audience filter ----- */}
-      <Card padding="sm" className="mb-3">
-        <p className="text-[10px] uppercase tracking-wider text-tg-hint">
-          {t('broadcast.composer.audience')}
-        </p>
-
-        <div className="mt-2 grid grid-cols-2 gap-2">
+      {/* Audience */}
+      <Accordion
+        open={openSection === 'audience'}
+        onToggle={() =>
+          setOpenSection((s) => (s === 'audience' ? null : 'audience'))
+        }
+        title={`👥 ${t('broadcast.composer.audience')}`}
+        badge={
+          audienceBadge ? (
+            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+              {audienceBadge} {t('broadcast.composer.recipients')}
+            </span>
+          ) : null
+        }
+      >
+        <div className="grid grid-cols-2 gap-2">
           <label className="block">
             <span className="text-[10px] text-tg-hint">{t('broadcast.composer.locale')}</span>
             <select
@@ -537,7 +820,9 @@ export function BroadcastComposer(): JSX.Element {
             <span className="text-[10px] text-tg-hint">{t('broadcast.composer.role')}</span>
             <select
               value={state.audience.role}
-              onChange={(e) => setAudience({ role: e.target.value as BroadcastAudience['role'] })}
+              onChange={(e) =>
+                setAudience({ role: e.target.value as BroadcastAudience['role'] })
+              }
               className="mt-1 w-full rounded-lg border border-black/10 bg-tg-secondary-bg px-2 py-1.5 text-xs text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
             >
               <option value="all">{t('broadcast.composer.role_all')}</option>
@@ -546,7 +831,6 @@ export function BroadcastComposer(): JSX.Element {
             </select>
           </label>
         </div>
-
         <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
           <label className="flex items-center gap-2">
             <input
@@ -586,9 +870,7 @@ export function BroadcastComposer(): JSX.Element {
         </label>
 
         <label className="mt-2 block">
-          <span className="text-[10px] text-tg-hint">
-            {t('broadcast.composer.user_ids')}
-          </span>
+          <span className="text-[10px] text-tg-hint">{t('broadcast.composer.user_ids')}</span>
           <textarea
             rows={2}
             value={userIdsCsv}
@@ -598,37 +880,73 @@ export function BroadcastComposer(): JSX.Element {
           />
         </label>
 
-        <button
-          type="button"
-          onClick={() => previewAudience.mutate()}
-          disabled={previewAudience.isPending || state.bot_id === null || state.text.length === 0}
-          className="press-scale mt-3 w-full rounded-full bg-tg-secondary-bg py-2 text-xs font-semibold text-tg-link disabled:opacity-50"
-        >
-          {previewAudience.isPending
-            ? t('broadcast.composer.previewing')
-            : t('broadcast.composer.preview_audience')}
-        </button>
-        {preview ? (
-          <div className="mt-2 rounded-xl bg-tg-secondary-bg/60 p-2 text-[11px]">
-            <p className="font-semibold text-tg-text">
-              {preview.count.toLocaleString()} {t('broadcast.composer.recipients')}
+        {/* Inline live audience preview */}
+        <div className="mt-3 rounded-xl bg-tg-secondary-bg/60 p-2 text-[11px]">
+          {audienceQuery.isLoading ? (
+            <p className="text-tg-hint">…</p>
+          ) : audienceCount === null ? (
+            <p className="text-tg-hint">{t('broadcast.composer.audience_pick_bot')}</p>
+          ) : audienceCount === 0 ? (
+            <p className="text-tg-destructive-text">
+              {t('broadcast.composer.audience_empty')}
             </p>
-            {preview.sample.length > 0 ? (
-              <ul className="mt-1 space-y-0.5 text-tg-subtitle-text">
-                {preview.sample.map((u) => (
-                  <li key={u.id} className="truncate">
-                    {u.username ? `@${u.username}` : `#${u.id}`}
-                    {u.first_name ? ` · ${u.first_name}` : ''}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
-      </Card>
+          ) : (
+            <>
+              <p className="font-semibold text-tg-text">
+                {audienceCount.toLocaleString()} {t('broadcast.composer.recipients')}
+              </p>
+              {audienceSample.length > 0 ? (
+                <ul className="mt-1 space-y-0.5 text-tg-subtitle-text">
+                  {audienceSample.map((u) => (
+                    <li key={u.id} className="truncate">
+                      {u.username ? `@${u.username}` : `#${u.id}`}
+                      {u.first_name ? ` · ${u.first_name}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          )}
+        </div>
+      </Accordion>
 
-      {/* ----- Action bar ----- */}
-      <div className="sticky bottom-3 z-10 flex flex-col gap-2 rounded-2xl bg-tg-bg/95 p-2 shadow-glow backdrop-blur">
+      {/* Schedule */}
+      <Accordion
+        open={openSection === 'schedule'}
+        onToggle={() =>
+          setOpenSection((s) => (s === 'schedule' ? null : 'schedule'))
+        }
+        title={`⏰ ${t('broadcast.composer.schedule')}`}
+        badge={
+          state.scheduled_at ? (
+            <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+              {new Date(state.scheduled_at).toLocaleString()}
+            </span>
+          ) : null
+        }
+      >
+        <input
+          type="datetime-local"
+          value={state.scheduled_at}
+          onChange={(e) => setState((s) => ({ ...s, scheduled_at: e.target.value }))}
+          className="w-full rounded-xl border border-black/10 bg-tg-secondary-bg px-3 py-2 text-sm text-tg-text focus:border-tg-link focus:outline-none dark:border-white/10"
+        />
+        {state.scheduled_at ? (
+          <button
+            type="button"
+            onClick={() => setState((s) => ({ ...s, scheduled_at: '' }))}
+            className="press-scale mt-2 w-full rounded-xl bg-tg-secondary-bg px-3 py-1.5 text-[11px] font-semibold text-tg-subtitle-text"
+          >
+            {t('broadcast.composer.clear_schedule')}
+          </button>
+        ) : null}
+        <p className="mt-2 text-[10px] text-tg-hint">
+          {t('broadcast.composer.schedule_dialog.message')}
+        </p>
+      </Accordion>
+
+      {/* Sticky action bar */}
+      <div className="sticky bottom-3 z-10 mt-4 flex flex-col gap-2 rounded-2xl bg-tg-bg/95 p-2 shadow-glow backdrop-blur">
         <div className="flex gap-2">
           <Button
             variant="secondary"
@@ -638,40 +956,40 @@ export function BroadcastComposer(): JSX.Element {
             loading={saveDraft.isPending}
             disabled={state.bot_id === null || state.text.trim().length === 0}
           >
-            {t('broadcast.composer.save_draft')}
+            💾 {t('broadcast.composer.save_draft')}
           </Button>
           <Button
             variant="primary"
             size="sm"
             block
-            onClick={() => setConfirmOpen(true)}
-            disabled={state.bot_id === null || state.text.trim().length === 0}
+            onClick={() =>
+              state.scheduled_at
+                ? schedule.mutate(new Date(state.scheduled_at).toISOString())
+                : setConfirmOpen(true)
+            }
+            disabled={
+              state.bot_id === null ||
+              state.text.trim().length === 0 ||
+              audienceCount === 0
+            }
+            loading={schedule.isPending}
           >
-            {t('broadcast.composer.send_now')}
+            {state.scheduled_at
+              ? `⏰ ${t('broadcast.composer.schedule')}`
+              : `🚀 ${t('broadcast.composer.send_now')}`}
           </Button>
         </div>
-        <div className="flex gap-2">
+        {isEditing ? (
           <Button
-            variant="secondary"
+            variant="destructive"
             size="sm"
             block
-            onClick={() => setScheduleOpen(true)}
-            disabled={state.bot_id === null || state.text.trim().length === 0}
+            onClick={() => deleteDraft.mutate()}
+            loading={deleteDraft.isPending}
           >
-            {t('broadcast.composer.schedule')}
+            🗑 {t('broadcast.composer.delete_draft')}
           </Button>
-          {isEditing ? (
-            <Button
-              variant="destructive"
-              size="sm"
-              block
-              onClick={() => deleteDraft.mutate()}
-              loading={deleteDraft.isPending}
-            >
-              {t('broadcast.composer.delete_draft')}
-            </Button>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
       <ConfirmDialog
@@ -681,7 +999,10 @@ export function BroadcastComposer(): JSX.Element {
           <>
             <p>
               {t('broadcast.composer.confirm.message', {
-                n: preview ? preview.count.toLocaleString() : '?',
+                n:
+                  audienceCount !== null
+                    ? audienceCount.toLocaleString()
+                    : '?',
               })}
             </p>
             <p className="mt-2 text-tg-destructive-text">
@@ -702,27 +1023,6 @@ export function BroadcastComposer(): JSX.Element {
           }
           setConfirmOpen(false);
           sendNow.mutate();
-        }}
-      />
-
-      <ConfirmDialog
-        open={scheduleOpen}
-        title={t('broadcast.composer.schedule_dialog.title')}
-        message={t('broadcast.composer.schedule_dialog.message')}
-        inputLabel={t('broadcast.composer.schedule_dialog.input')}
-        inputPlaceholder="2026-05-10T09:00"
-        inputType="text"
-        inputDefaultValue={state.scheduled_at}
-        confirmLabel={t('broadcast.composer.schedule')}
-        loading={schedule.isPending}
-        onCancel={() => setScheduleOpen(false)}
-        onConfirm={(v) => {
-          if (!v || v.trim().length === 0) {
-            setError('scheduled_at required');
-            return;
-          }
-          setScheduleOpen(false);
-          schedule.mutate(v);
         }}
       />
     </Layout>

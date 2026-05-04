@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-05
+
+### Added
+
+- **Live 1:1 Telegram preview in the broadcast composer.** New
+  `MessagePreview` component renders the message exactly as a
+  recipient will see it: bot avatar + display name + parsed body
+  (HTML or MarkdownV2 → React tree, no `dangerouslySetInnerHTML`) +
+  media placeholder + inline buttons styled like the real Telegram
+  client. Sticky at the top of the composer so it's always visible
+  while scrolling the form.
+- **Safe HTML/MarkdownV2 renderer.** Telegram's full tag allowlist
+  (`b/strong, i/em, u/ins, s/strike/del, code, pre, a[href], br`) +
+  the MarkdownV2 set (`*bold*, _italic_, __underline__, ~strike~,
+  \`code\`, \`\`\`pre\`\`\`, [label](url)`). Unknown tags pass through
+  as literal text so operators see their own typos in the preview
+  instead of guessing why formatting "didn't work".
+- **Template substitution in the preview.** `{{first_name}}`,
+  `{{username}}`, `{{user_id}}`, `{{full_name}}`, `{{last_name}}`
+  resolve against the operator's own profile so the bubble reads
+  like a real incoming message.
+- **Stateless audience preview endpoint** —
+  `POST /api/v1/broadcasts/preview-audience` accepts
+  `{ bot_id, audience }` directly so the composer can show a live
+  recipient count without a save → preview round-trip. Hits the
+  same permission gate as everything else.
+
+### Changed (composer redesign)
+
+- **Accordion sections** — Content / Media / Buttons / Audience /
+  Schedule. Default state opens Content only; tap a header to
+  expand. Each header carries a status badge: text length, media
+  type, button count, audience count, scheduled time.
+- **Live audience count** ticks on every filter change with a
+  500 ms debounce. Inline below the audience filter, no manual
+  "Preview" button needed (the old explicit button is gone). Sample
+  of 5 matching users renders alongside the count.
+- **`<input type="datetime-local">`** for schedule instead of a
+  free-text ISO 8601 field; "Clear schedule" button below.
+- **Inline-formatting chips** — `B / I / U / S / </> / 🔗` row
+  above the textarea; tapping wraps the current selection (or
+  inserts at the cursor) with the right tag for the active
+  parse_mode (HTML or MarkdownV2). Bash chips disappear in `plain`.
+- **Template variable chips** — tap to insert
+  `{{first_name}}` / `{{username}}` / `{{full_name}}` /
+  `{{user_id}}` at the cursor.
+- **Auto-hide bot picker** when the operator owns exactly one bot.
+- **Send / Schedule unified action** — the primary action button
+  reads "🚀 Send now" by default and switches to
+  "⏰ Schedule" when a `scheduled_at` is set. No more separate
+  schedule button cluttering the action bar.
+
+### Notes
+
+- No schema or worker changes; pure UX pass.
+- 4 new locale keys (en + th).
+- `cleanButtons()` helper centralizes the half-filled-row strip on
+  both the frontend (so the preview reflects the cleaned form) and
+  the backend (`validateButtons` now returns the cleaned matrix
+  instead of throwing on empty slots — drafts mid-edit save fine).
+- Mini App production build is 346 KB JS / 28 KB CSS (98 KB / 6 KB
+  gzipped). 185 tests pass; lint + typecheck clean across bot +
+  Mini App.
+
 ## [0.3.0] - 2026-05-04
 
 ### Added (broadcast system)

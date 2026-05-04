@@ -269,6 +269,45 @@ export function broadcastsRoutes(deps: BroadcastsRouteDeps): Hono<MiniAppEnv> {
     return c.json({ data: preview });
   });
 
+  /**
+   * Stateless audience preview — the composer hits this every time the
+   * audience filter changes (debounced) so the live count ticks without a
+   * `POST /broadcasts` then `POST :id/audience-preview` round trip. Body:
+   * `{ bot_id, audience }`.
+   */
+  app.post('/broadcasts/preview-audience', async (c) => {
+    const body = await c.req
+      .json<{ bot_id?: unknown; audience?: unknown }>()
+      .catch(() => ({}) as { bot_id?: unknown; audience?: unknown });
+    if (typeof body.bot_id !== 'number' || !Number.isFinite(body.bot_id)) {
+      throw new AppError(ErrorCode.INVALID_INPUT, 'bot_id must be a number', { expose: true });
+    }
+    if (typeof body.audience !== 'object' || body.audience === null) {
+      throw new AppError(ErrorCode.INVALID_INPUT, 'audience must be an object', { expose: true });
+    }
+    const a = body.audience as Record<string, unknown>;
+    const locale: 'all' | 'en' | 'th' =
+      a.locale === 'en' || a.locale === 'th' ? a.locale : 'all';
+    const role: 'all' | 'super_admin' | 'user' =
+      a.role === 'super_admin' || a.role === 'user' ? a.role : 'all';
+    const audience = {
+      locale,
+      role,
+      exclude_banned: a.exclude_banned !== false,
+      exclude_unsubscribed: a.exclude_unsubscribed !== false,
+      registered_within_days:
+        typeof a.registered_within_days === 'number' && a.registered_within_days > 0
+          ? Math.floor(a.registered_within_days)
+          : null,
+      user_ids: Array.isArray(a.user_ids)
+        ? a.user_ids.filter((v): v is string => typeof v === 'string')
+        : [],
+    };
+    const preview = services.broadcast.audiencePreviewFor(c.var.user, body.bot_id, audience);
+    c.header('Cache-Control', 'no-store');
+    return c.json({ data: preview });
+  });
+
   /* ----------------------------------------------------------------------- *
    * State transitions
    * ----------------------------------------------------------------------- */
