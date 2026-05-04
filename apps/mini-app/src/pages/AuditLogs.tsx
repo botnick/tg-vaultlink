@@ -61,36 +61,35 @@ interface AuditRowProps {
  * reveal the raw metadata payload formatted with two-space indents. */
 function AuditRow({ row, locale, t, delayMs }: AuditRowProps): JSX.Element {
   const [showJson, setShowJson] = useState(false);
+  const hasTarget = row.target_type !== null || row.target_id !== null;
   return (
     <li className="fade-up" style={{ animationDelay: `${delayMs}ms` }}>
       <Card padding="sm">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-mono text-xs text-tg-link">{row.action}</p>
-            <p className="mt-0.5 text-[11px] text-tg-subtitle-text">
-              {t('audit.actor')}: {formatActor(row)}
-            </p>
-            {row.target_type !== null || row.target_id !== null ? (
-              <p className="mt-0.5 text-[11px] text-tg-subtitle-text">
-                {t('audit.target')}: {row.target_type ?? '—'}/{row.target_id ?? '—'}
-              </p>
-            ) : null}
-          </div>
-          <span className="shrink-0 text-[11px] text-tg-subtitle-text">
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate font-mono text-[11px] text-tg-link flex-1 leading-tight">
+            {row.action}
+          </p>
+          <span className="shrink-0 text-[10px] text-tg-subtitle-text">
             {formatDate(row.created_at, locale)}
           </span>
         </div>
+        <p className="mt-0.5 truncate text-[10px] text-tg-subtitle-text leading-tight">
+          {formatActor(row)}
+          {hasTarget
+            ? ` · ${row.target_type ?? '—'}/${row.target_id ?? '—'}`
+            : ''}
+        </p>
         {row.metadata_json ? (
           <>
             <button
               type="button"
               onClick={() => setShowJson((v) => !v)}
-              className="press-scale mt-2 text-[10px] font-semibold uppercase tracking-wider text-tg-link"
+              className="press-scale mt-1 text-[9px] font-semibold uppercase tracking-wider text-tg-link"
             >
               {showJson ? t('audit.hide_json') : t('audit.show_json')}
             </button>
             {showJson ? (
-              <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-tg-secondary-bg p-2 text-[11px] leading-snug text-tg-subtitle-text">
+              <pre className="mt-1.5 max-h-56 overflow-auto rounded-xl bg-tg-secondary-bg p-2 text-[10px] leading-snug text-tg-subtitle-text">
                 {prettyJson(row.metadata_json)}
               </pre>
             ) : null}
@@ -139,19 +138,19 @@ export function AuditLogs(): JSX.Element {
 
   return (
     <Layout title={t('audit.title')} back={() => navigate(-1)} hideNav>
-      <form onSubmit={onSubmit} className="mb-4 grid grid-cols-2 gap-2">
+      <form onSubmit={onSubmit} className="mb-3 grid grid-cols-2 gap-2">
         <input
           value={filters.action}
           onChange={(e) => setFilters((f) => ({ ...f, action: e.target.value }))}
           placeholder={t('audit.action')}
-          className="h-10 rounded-2xl border border-black/10 bg-tg-secondary-bg px-3 text-sm text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+          className="h-9 rounded-2xl border border-black/10 bg-tg-secondary-bg px-3 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
         />
         <input
           value={filters.actorUserId}
           onChange={(e) => setFilters((f) => ({ ...f, actorUserId: e.target.value }))}
           placeholder={t('audit.actor')}
           inputMode="numeric"
-          className="h-10 rounded-2xl border border-black/10 bg-tg-secondary-bg px-3 text-sm text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+          className="h-9 rounded-2xl border border-black/10 bg-tg-secondary-bg px-3 text-xs text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
         />
         <Button type="submit" variant="primary" size="sm" block className="col-span-2">
           {t('common.save')}
@@ -172,7 +171,7 @@ export function AuditLogs(): JSX.Element {
           description={t('audit.empty.description')}
         />
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-1.5">
           {items.map((row, idx) => (
             <AuditRow key={row.id} row={row} locale={locale} t={t} delayMs={Math.min(idx, 10) * 14} />
           ))}
@@ -180,17 +179,17 @@ export function AuditLogs(): JSX.Element {
       )}
 
       {!query.isLoading && total > PAGE_SIZE ? (
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-3 flex items-center justify-between">
           <Button
             variant="secondary"
             size="sm"
             disabled={page === 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
-            leftIcon={<ChevronLeftIcon size={16} />}
+            leftIcon={<ChevronLeftIcon size={14} />}
           >
             {t('common.prev')}
           </Button>
-          <span className="text-xs text-tg-subtitle-text">
+          <span className="text-[11px] text-tg-subtitle-text">
             {page + 1} / {lastPage + 1}
           </span>
           <Button
@@ -198,7 +197,7 @@ export function AuditLogs(): JSX.Element {
             size="sm"
             disabled={page >= lastPage}
             onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
-            rightIcon={<ChevronRightIcon size={16} />}
+            rightIcon={<ChevronRightIcon size={14} />}
           >
             {t('common.next')}
           </Button>

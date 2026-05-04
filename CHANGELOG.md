@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-05-02
+
+### Changed (admin Mini App — compact pass)
+
+- **`AdminDashboard` is now one phone-screen tall on most viewports.**
+  The aurora-mesh hero shrunk (`p-4`, `text-lg` heading) and the stat
+  block went from a 2-column grid of large cards to a tight 3×2 grid of
+  glass tiles (`rounded-xl px-2.5 py-2`, `text-lg` numerics). Drill-down
+  shortcuts collapsed to a single column of compact rows: 36 px
+  gradient icon, `text-sm` title, `text-[11px]` subtitle, `padding="sm"`
+  cards, `space-y-2`. Outer `space-y-3` (was 5).
+- **`AdminUsers` rows are half the height.** Promote / Demote actions
+  moved from a full button row at the bottom of each card to inline
+  28 px circular icon buttons (↑ / ↓) on the right side, only rendered
+  when the action is available. Status pills shrunk to a single emoji
+  in `text-[9px]` (🔑 founder, 👑 super, 🚫 banned). User metadata
+  collapsed to one line: `tg #id · locale · joined`. Card padding
+  `sm`, list `space-y-1.5`, search input `h-10` (was 11).
+- **`AdminFiles` rows are tighter and the share-code line goes first.**
+  The code+copy row leads each card; filename and metadata follow in
+  smaller fonts (`text-xs` filename, `text-[10px]` meta with the
+  created date inlined). Status pills use single emoji
+  (`text-[9px]`, 🗑 / 🔒 / 🔑 / private / ⌛). Pill row only renders
+  when at least one flag is set.
+- **`AuditLogs` rows fit in two lines.** Action + timestamp on one
+  row, actor + target inlined on the second, JSON toggle moved to
+  `text-[9px]` and the JSON pre-block uses `text-[10px]
+  max-h-56`. Filter inputs shrunk to `h-9 text-xs`.
+- All admin pages dropped pagination icon size to 14 px and tightened
+  the page label to `text-[11px]` for visual consistency.
+
+### Notes
+
+- No backend or schema changes; pure CSS / React layout pass.
+- Typecheck + lint + 164 tests pass; Mini App production build is
+  120 modules / 296 KB JS / 24 KB CSS (87 KB / 6 KB gzipped).
+
 ## [0.2.4] - 2026-05-04
 
 ### Added (admin Mini App overhaul)

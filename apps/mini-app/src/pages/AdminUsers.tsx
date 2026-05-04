@@ -3,14 +3,14 @@
  *
  * Live search across `username`, first/last name, and `telegram_user_id`
  * (debounced ~250 ms so each keystroke isn't a round-trip). Founders see
- * per-row "Promote" / "Demote" buttons that flip `role` via the server-
- * gated `POST /admin/users/:id/role` endpoint. Promoted super admins
- * never see those buttons — defense-in-depth means the API would
+ * compact icon-only Promote / Demote buttons that flip `role` via the
+ * server-gated `POST /admin/users/:id/role` endpoint. Founders themselves
+ * never see the demote button — defense-in-depth means the API would
  * reject the call anyway.
  *
- * Pills: 🔑 founder (env ADMIN_IDS), 👑 super_admin (DB role),
- * 🚫 banned. Founders cannot be demoted via this UI; they must be
- * removed from `.env ADMIN_IDS` first.
+ * Pills: 🔑 founder (env ADMIN_IDS), 👑 super (DB role), 🚫 banned.
+ * Founders cannot be demoted via this UI; they must be removed from
+ * `.env ADMIN_IDS` first.
  */
 
 import { useEffect, useState } from 'react';
@@ -54,6 +54,40 @@ function useDebounced<T>(value: T, delayMs: number): T {
   return out;
 }
 
+interface RoleButtonProps {
+  variant: 'promote' | 'demote';
+  title: string;
+  onClick: () => void;
+  disabled: boolean;
+}
+
+/** Compact circular role action — saves a whole row of vertical space
+ * vs. a full Button widget when most rows have no available action. */
+function RoleButton({ variant, title, onClick, disabled }: RoleButtonProps): JSX.Element {
+  const styles =
+    variant === 'promote'
+      ? 'bg-gradient-to-br from-brand-violet to-brand-fuchsia text-white shadow-soft'
+      : 'bg-tg-secondary-bg text-tg-subtitle-text border border-black/10 dark:border-white/10';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className={[
+        'press-scale flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+        styles,
+        disabled ? 'opacity-50 cursor-not-allowed' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {variant === 'promote' ? '↑' : '↓'}
+    </button>
+  );
+}
+
 export function AdminUsers(): JSX.Element {
   const t = useT();
   const { locale } = useLocale();
@@ -88,7 +122,6 @@ export function AdminUsers(): JSX.Element {
     },
     onSuccess: () => {
       hapticNotify('success');
-      // Refresh both the current page and the dashboard stats.
       void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
       void qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
@@ -101,21 +134,21 @@ export function AdminUsers(): JSX.Element {
   return (
     <Layout title={t('admin.users.title')} back={() => navigate(-1)} hideNav>
       {/* Live search */}
-      <div className="relative mb-4">
+      <div className="relative mb-3">
         <SearchIcon
-          size={18}
+          size={16}
           className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-tg-hint"
         />
         <input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder={t('admin.users.search_placeholder')}
-          className="h-11 w-full rounded-2xl border border-black/10 bg-tg-secondary-bg pl-9 pr-3 text-sm text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
+          className="h-10 w-full rounded-2xl border border-black/10 bg-tg-secondary-bg pl-9 pr-3 text-sm text-tg-text placeholder:text-tg-hint focus:border-tg-link focus:outline-none dark:border-white/10"
         />
       </div>
 
       {setRoleMutation.isError ? (
-        <p className="mb-3 rounded-2xl bg-tg-destructive-text/10 px-3 py-2 text-xs text-tg-destructive-text">
+        <p className="mb-2 rounded-xl bg-tg-destructive-text/10 px-3 py-1.5 text-[11px] text-tg-destructive-text">
           {setRoleMutation.error instanceof Error
             ? setRoleMutation.error.message
             : t('common.error_title')}
@@ -140,7 +173,7 @@ export function AdminUsers(): JSX.Element {
           }
         />
       ) : (
-        <ul className="space-y-2 stagger">
+        <ul className="space-y-1.5 stagger">
           {items.map((u) => {
             const name = userName(u);
             const isSelf = me?.id === u.id;
@@ -152,69 +185,53 @@ export function AdminUsers(): JSX.Element {
             const canDemote = isFounder && !isSelf && isSuper && !isThisFounder;
             return (
               <li key={u.id} className="animate-fade-up">
-                <Card padding="md">
-                  <div className="flex items-start justify-between gap-2">
+                <Card padding="sm">
+                  <div className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold text-tg-text">
+                      <p className="truncate text-sm font-semibold text-tg-text leading-tight">
                         {userHandle(u)}
                         {name ? <span className="text-tg-subtitle-text"> · {name}</span> : null}
                       </p>
-                      <p className="mt-0.5 truncate font-mono text-[11px] text-tg-subtitle-text">
-                        tg #{u.telegram_user_id}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-tg-subtitle-text">
-                        {t('admin.users.locale')}: {u.locale ?? '—'} · {t('admin.users.joined')}:{' '}
+                      <p className="mt-0.5 truncate font-mono text-[10px] text-tg-subtitle-text leading-tight">
+                        tg #{u.telegram_user_id} · {u.locale ?? '—'} ·{' '}
                         {formatDate(u.created_at, locale)}
                       </p>
                     </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
+                    <div className="flex shrink-0 items-center gap-1">
                       {isThisFounder ? (
-                        <span className="rounded-full bg-gradient-to-r from-brand-amber to-brand-pink px-2 py-0.5 text-[10px] font-semibold text-white">
-                          🔑 founder
+                        <span className="rounded-full bg-gradient-to-r from-brand-amber to-brand-pink px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                          🔑
                         </span>
                       ) : isSuper ? (
-                        <span className="rounded-full bg-gradient-to-r from-brand-violet to-brand-fuchsia px-2 py-0.5 text-[10px] font-semibold text-white">
-                          👑 super_admin
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-tg-secondary-bg px-2 py-0.5 text-[10px] font-semibold text-tg-subtitle-text">
-                          {u.role}
-                        </span>
-                      )}
-                      {u.is_banned ? (
-                        <span className="rounded-full bg-tg-destructive-text/10 px-2 py-0.5 text-[10px] font-semibold text-tg-destructive-text">
-                          🚫 {t('admin.users.banned')}
+                        <span className="rounded-full bg-gradient-to-r from-brand-violet to-brand-fuchsia px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                          👑
                         </span>
                       ) : null}
-                    </div>
-                  </div>
-
-                  {(canPromote || canDemote) && !setRoleMutation.isPending ? (
-                    <div className="mt-3 flex gap-2">
-                      {canPromote ? (
-                        <Button
-                          variant="primary"
-                          size="sm"
+                      {u.is_banned ? (
+                        <span className="rounded-full bg-tg-destructive-text/10 px-1.5 py-0.5 text-[9px] font-semibold text-tg-destructive-text">
+                          🚫
+                        </span>
+                      ) : null}
+                      {canPromote && !setRoleMutation.isPending ? (
+                        <RoleButton
+                          variant="promote"
+                          title={t('admin.users.promote')}
+                          disabled={setRoleMutation.isPending}
                           onClick={() =>
                             setRoleMutation.mutate({ userId: u.id, role: 'super_admin' })
                           }
-                          disabled={setRoleMutation.isPending}
-                        >
-                          {t('admin.users.promote')}
-                        </Button>
+                        />
                       ) : null}
-                      {canDemote ? (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setRoleMutation.mutate({ userId: u.id, role: 'user' })}
+                      {canDemote && !setRoleMutation.isPending ? (
+                        <RoleButton
+                          variant="demote"
+                          title={t('admin.users.demote')}
                           disabled={setRoleMutation.isPending}
-                        >
-                          {t('admin.users.demote')}
-                        </Button>
+                          onClick={() => setRoleMutation.mutate({ userId: u.id, role: 'user' })}
+                        />
                       ) : null}
                     </div>
-                  ) : null}
+                  </div>
                 </Card>
               </li>
             );
@@ -223,17 +240,17 @@ export function AdminUsers(): JSX.Element {
       )}
 
       {!query.isLoading && total > PAGE_SIZE ? (
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-3 flex items-center justify-between">
           <Button
             variant="secondary"
             size="sm"
             disabled={page === 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
-            leftIcon={<ChevronLeftIcon size={16} />}
+            leftIcon={<ChevronLeftIcon size={14} />}
           >
             {t('common.prev')}
           </Button>
-          <span className="text-xs text-tg-subtitle-text">
+          <span className="text-[11px] text-tg-subtitle-text">
             {page + 1} / {lastPage + 1}
           </span>
           <Button
@@ -241,7 +258,7 @@ export function AdminUsers(): JSX.Element {
             size="sm"
             disabled={page >= lastPage}
             onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
-            rightIcon={<ChevronRightIcon size={16} />}
+            rightIcon={<ChevronRightIcon size={14} />}
           >
             {t('common.next')}
           </Button>

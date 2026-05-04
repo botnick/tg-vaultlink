@@ -73,79 +73,80 @@ export function AdminFiles(): JSX.Element {
           description={t('admin.files.empty.description')}
         />
       ) : (
-        <ul className="space-y-2 stagger">
-          {items.map((row) => (
-            <li key={row.id} className="animate-fade-up">
-              <Card padding="md">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    {/* Tap the code (or the icon button) to copy. The whole
-                       <code> block is also a copy surface so a one-finger
-                       tap on a small phone screen still works. */}
-                    <div className="flex items-center gap-2">
-                      <code className="truncate font-mono text-xs text-tg-link flex-1">
-                        {shareCodeFor(row)}
-                      </code>
-                      <CopyButton value={shareCodeFor(row)} label={t('file_detail.copy')} />
-                    </div>
-                    <p className="mt-1 truncate text-sm font-semibold text-tg-text">
-                      {row.file_name ?? `${row.file_type}`}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-tg-subtitle-text">
-                      {actorLabel(row.owner)} · {row.file_type}
-                      {row.size_bytes !== null ? ` · ${formatBytes(row.size_bytes)}` : ''}
-                      {row.download_count > 0 ? ` · ⬇ ${row.download_count}` : ''}
-                    </p>
+        <ul className="space-y-1.5 stagger">
+          {items.map((row) => {
+            const hasPills =
+              row.is_deleted || row.is_locked || row.has_password || row.visibility === 'private';
+            return (
+              <li key={row.id} className="animate-fade-up">
+                <Card padding="sm">
+                  <div className="flex items-center gap-2">
+                    <code
+                      onClick={() => void navigator.clipboard?.writeText(shareCodeFor(row))}
+                      className="truncate font-mono text-[11px] text-tg-link flex-1 cursor-pointer"
+                      title={t('file_detail.copy')}
+                    >
+                      {shareCodeFor(row)}
+                    </code>
+                    <CopyButton value={shareCodeFor(row)} label={t('file_detail.copy')} />
                   </div>
-                  <span className="shrink-0 text-[11px] text-tg-subtitle-text">
+                  <p className="mt-1 truncate text-xs font-semibold text-tg-text leading-tight">
+                    {row.file_name ?? `${row.file_type}`}
+                  </p>
+                  <p className="mt-0.5 truncate text-[10px] text-tg-subtitle-text leading-tight">
+                    {actorLabel(row.owner)} · {row.file_type}
+                    {row.size_bytes !== null ? ` · ${formatBytes(row.size_bytes)}` : ''}
+                    {row.download_count > 0 ? ` · ⬇ ${row.download_count}` : ''} ·{' '}
                     {formatDate(row.created_at, locale)}
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {row.is_deleted ? (
-                    <span className="rounded-full bg-tg-destructive-text/10 px-2 py-0.5 text-[10px] font-semibold text-tg-destructive-text">
-                      🗑 deleted
-                    </span>
+                  </p>
+                  {hasPills ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {row.is_deleted ? (
+                        <span className="rounded-full bg-tg-destructive-text/10 px-1.5 py-0.5 text-[9px] font-semibold text-tg-destructive-text">
+                          🗑
+                        </span>
+                      ) : null}
+                      {row.is_locked ? (
+                        <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-amber-600 dark:text-amber-400">
+                          🔒
+                        </span>
+                      ) : null}
+                      {row.has_password ? (
+                        <span className="rounded-full bg-tg-link/10 px-1.5 py-0.5 text-[9px] font-semibold text-tg-link">
+                          🔑
+                        </span>
+                      ) : null}
+                      {row.visibility === 'private' ? (
+                        <span className="rounded-full bg-purple-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-purple-600 dark:text-purple-400">
+                          private
+                        </span>
+                      ) : null}
+                      {row.expires_at ? (
+                        <span className="rounded-full bg-tg-secondary-bg px-1.5 py-0.5 text-[9px] font-semibold text-tg-subtitle-text">
+                          ⌛ {formatDate(row.expires_at, locale)}
+                        </span>
+                      ) : null}
+                    </div>
                   ) : null}
-                  {row.is_locked ? (
-                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                      🔒 locked
-                    </span>
-                  ) : null}
-                  {row.has_password ? (
-                    <span className="rounded-full bg-tg-link/10 px-2 py-0.5 text-[10px] font-semibold text-tg-link">
-                      🔑 pwd
-                    </span>
-                  ) : null}
-                  {row.visibility === 'private' ? (
-                    <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-semibold text-purple-600 dark:text-purple-400">
-                      private
-                    </span>
-                  ) : null}
-                  {row.expires_at ? (
-                    <span className="rounded-full bg-tg-secondary-bg px-2 py-0.5 text-[10px] font-semibold text-tg-subtitle-text">
-                      ⌛ {formatDate(row.expires_at, locale)}
-                    </span>
-                  ) : null}
-                </div>
-              </Card>
-            </li>
-          ))}
+                </Card>
+              </li>
+            );
+          })}
         </ul>
       )}
 
       {!query.isLoading && total > PAGE_SIZE ? (
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-3 flex items-center justify-between">
           <Button
             variant="secondary"
             size="sm"
             disabled={page === 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
-            leftIcon={<ChevronLeftIcon size={16} />}
+            leftIcon={<ChevronLeftIcon size={14} />}
           >
             {t('common.prev')}
           </Button>
-          <span className="text-xs text-tg-subtitle-text">
+          <span className="text-[11px] text-tg-subtitle-text">
             {page + 1} / {lastPage + 1}
           </span>
           <Button
@@ -153,7 +154,7 @@ export function AdminFiles(): JSX.Element {
             size="sm"
             disabled={page >= lastPage}
             onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
-            rightIcon={<ChevronRightIcon size={16} />}
+            rightIcon={<ChevronRightIcon size={14} />}
           >
             {t('common.next')}
           </Button>

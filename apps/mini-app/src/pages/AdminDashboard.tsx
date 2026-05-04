@@ -1,13 +1,10 @@
 /**
  * VaultLink Mini App — Admin dashboard.
  *
- * Top stats hero + system-wide drill-downs (all files, all users, every
- * bot, audit log, reports). Gated by `<RequireAdmin>` at the router
- * level; the API re-checks `is_admin` on every request.
- *
- * Adopts the same fintech-card aesthetic as Home: aurora-mesh hero with
- * glassmorphism stat tiles, plus a coloured shortcut grid using the
- * brand gradients so each section has a recognisable accent.
+ * Compact fintech-card layout: aurora-mesh hero with a tight 3×2 stat
+ * grid + a 1-column shortcut list with small gradient icons. Built for
+ * scanability — every actionable surface fits inside one phone-screen
+ * height before scroll, including the hero on most viewports.
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -28,7 +25,7 @@ import {
   UsersIcon,
 } from '../components/icons.js';
 
-interface ShortcutTileProps {
+interface ShortcutRowProps {
   to: string;
   icon: JSX.Element;
   iconBg: string;
@@ -36,23 +33,25 @@ interface ShortcutTileProps {
   subtitle?: string;
 }
 
-function ShortcutTile({ to, icon, iconBg, title, subtitle }: ShortcutTileProps): JSX.Element {
+function ShortcutRow({ to, icon, iconBg, title, subtitle }: ShortcutRowProps): JSX.Element {
   return (
     <Link to={to} className="block animate-fade-up">
-      <Card interactive padding="md" className="group">
-        <div className="flex items-center gap-3">
+      <Card interactive padding="sm" className="group">
+        <div className="flex items-center gap-2.5">
           <div
             className={[
-              'flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-soft',
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-soft',
               iconBg,
             ].join(' ')}
           >
             {icon}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-tg-text">{title}</p>
+            <p className="truncate text-sm font-semibold text-tg-text leading-tight">{title}</p>
             {subtitle ? (
-              <p className="truncate text-xs text-tg-subtitle-text">{subtitle}</p>
+              <p className="truncate text-[11px] text-tg-subtitle-text leading-tight mt-0.5">
+                {subtitle}
+              </p>
             ) : null}
           </div>
           <span className="text-tg-subtitle-text transition-transform group-active:translate-x-0.5">
@@ -64,16 +63,11 @@ function ShortcutTile({ to, icon, iconBg, title, subtitle }: ShortcutTileProps):
   );
 }
 
-interface GlassStatProps {
-  label: string;
-  value: number | string;
-}
-
-function GlassStat({ label, value }: GlassStatProps): JSX.Element {
+function GlassStat({ label, value }: { label: string; value: number | string }): JSX.Element {
   return (
-    <div className="glass-dark rounded-2xl p-4">
-      <p className="text-[11px] uppercase tracking-wider opacity-75">{label}</p>
-      <p className="mt-1 text-2xl font-bold">{value}</p>
+    <div className="glass-dark rounded-xl px-2.5 py-2">
+      <p className="text-[9px] uppercase tracking-wider opacity-75 leading-tight">{label}</p>
+      <p className="mt-0.5 text-lg font-bold leading-none">{value}</p>
     </div>
   );
 }
@@ -87,32 +81,32 @@ export function AdminDashboard(): JSX.Element {
 
   return (
     <Layout title={t('admin.title')}>
-      <div className="space-y-5 stagger">
-        {/* Hero — aurora mesh + glass stat tiles */}
-        <div className="aurora-mesh shine-host relative overflow-hidden rounded-4xl border border-white/15 p-5 text-white shadow-glow animate-fade-up">
+      <div className="space-y-3 stagger">
+        {/* Hero — aurora mesh + 3×2 glass stat grid (tight) */}
+        <div className="aurora-mesh shine-host relative overflow-hidden rounded-3xl border border-white/15 p-4 text-white shadow-glow animate-fade-up">
           <div className="relative z-[1]">
-            <p className="text-[11px] uppercase tracking-[0.2em] opacity-75">
+            <p className="text-[10px] uppercase tracking-[0.18em] opacity-75">
               {t('admin.title')}
             </p>
-            <h2 className="mt-1 text-2xl font-bold leading-tight">
+            <h2 className="mt-0.5 text-lg font-bold leading-tight">
               {t('admin.hero.subtitle')}
             </h2>
 
             {query.isLoading ? (
-              <div className="mt-5 grid grid-cols-3 gap-3">
+              <div className="mt-3 grid grid-cols-3 gap-2">
                 <SkeletonCard lines={1} />
                 <SkeletonCard lines={1} />
                 <SkeletonCard lines={1} />
               </div>
             ) : query.isError ? (
-              <div className="mt-5">
+              <div className="mt-3">
                 <ErrorState
                   message={query.error instanceof Error ? query.error.message : undefined}
                   onRetry={() => query.refetch()}
                 />
               </div>
             ) : (
-              <div className="mt-5 grid grid-cols-3 gap-3">
+              <div className="mt-3 grid grid-cols-3 gap-2">
                 <GlassStat label={t('admin.stats.users')} value={query.data?.users ?? 0} />
                 <GlassStat label={t('admin.stats.files')} value={query.data?.files ?? 0} />
                 <GlassStat label={t('admin.stats.bots')} value={query.data?.bots ?? 0} />
@@ -134,39 +128,39 @@ export function AdminDashboard(): JSX.Element {
           <span className="shine-overlay" />
         </div>
 
-        {/* Drill-downs */}
-        <div className="grid grid-cols-1 gap-3">
-          <ShortcutTile
+        {/* Drill-downs — 1-column compact rows */}
+        <div className="grid grid-cols-1 gap-2">
+          <ShortcutRow
             to="/admin/files"
-            icon={<FilesIcon size={22} />}
+            icon={<FilesIcon size={18} />}
             iconBg="bg-gradient-to-br from-brand-indigo to-brand-violet"
             title={t('admin.shortcuts.all_files')}
             subtitle={t('admin.shortcuts.all_files_subtitle')}
           />
-          <ShortcutTile
+          <ShortcutRow
             to="/admin/users"
-            icon={<UsersIcon size={22} />}
+            icon={<UsersIcon size={18} />}
             iconBg="bg-gradient-to-br from-brand-cyan to-brand-teal"
             title={t('admin.shortcuts.all_users')}
             subtitle={t('admin.shortcuts.all_users_subtitle')}
           />
-          <ShortcutTile
+          <ShortcutRow
             to="/admin/reports"
-            icon={<FlagIcon size={22} />}
+            icon={<FlagIcon size={18} />}
             iconBg="bg-gradient-to-br from-brand-fuchsia to-brand-pink"
             title={t('admin.shortcuts.reports')}
             subtitle={t('admin.stats.pending_reports')}
           />
-          <ShortcutTile
+          <ShortcutRow
             to="/admin/audit"
-            icon={<ListIcon size={22} />}
+            icon={<ListIcon size={18} />}
             iconBg="bg-gradient-to-br from-brand-amber to-brand-pink"
             title={t('admin.shortcuts.audit')}
             subtitle={t('admin.shortcuts.audit_subtitle')}
           />
-          <ShortcutTile
+          <ShortcutRow
             to="/bots"
-            icon={<BotsIcon size={22} />}
+            icon={<BotsIcon size={18} />}
             iconBg="bg-gradient-to-br from-brand-violet to-brand-fuchsia"
             title={t('admin.shortcuts.bots')}
             subtitle={t('admin.shortcuts.bots_subtitle')}

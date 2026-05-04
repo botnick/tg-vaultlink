@@ -1,6 +1,6 @@
 {
   "name": "vaultlink-bot",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Turn Telegram files into secure share codes you control.",
   "type": "module",
   "license": "MIT",
