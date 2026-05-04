@@ -31,7 +31,11 @@ export interface MiniAppEnv {
     reqId: string;
     initData: ParsedInitData;
     user: UserRow;
+    /** True for super_admin (role) OR ADMIN_IDS (env). */
     isAdmin: boolean;
+    /** Strict — true ONLY for ADMIN_IDS env members. Founders are the only
+     * tier that can promote / demote other super admins. */
+    isFounder: boolean;
   };
 }
 
@@ -109,6 +113,7 @@ export function authMiddleware(deps: {
     c.set('initData', parsed);
     c.set('user', userRow);
     c.set('isAdmin', services.permission.isAdmin(userRow));
+    c.set('isFounder', services.permission.isFounder(userRow));
 
     await next();
     return;

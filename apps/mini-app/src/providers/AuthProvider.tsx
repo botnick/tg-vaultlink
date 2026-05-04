@@ -23,6 +23,10 @@ import type { MeResponse, MeUser } from '../types/api.js';
 interface AuthState {
   user: MeUser | null;
   isAdmin: boolean;
+  /** Strict — true only when the caller is in env ADMIN_IDS. Founders are
+   * the only tier that can promote / demote super admins, so the UI uses
+   * this flag to gate the role-change buttons. */
+  isFounder: boolean;
   loading: boolean;
   /** `'no_telegram'` when initData is missing, otherwise the API's error code. */
   error: string | null;
@@ -84,6 +88,7 @@ export function AuthProvider({ children }: Props): JSX.Element {
     () => ({
       user,
       isAdmin: user?.is_admin === true,
+      isFounder: user?.is_founder === true,
       loading,
       error,
       refresh,

@@ -55,6 +55,49 @@ export class UserRepository {
     return this.listByRoleStmt.all(role, limit, offset) as unknown as UserRow[];
   }
 
+  /**
+   * Case-insensitive substring search across `username`, `first_name`,
+   * `last_name`, and `telegram_user_id`. Used by the admin Mini App so an
+   * operator can find a user by handle, name, or numeric Telegram id from
+   * one input box. Empty `q` returns the same rows as {@link list}.
+   *
+   * SQL is rebuilt per call (rather than prepared) because LIKE patterns
+   * are baked into the parameter — we use placeholders for safety, but
+   * the statement shape never varies so re-prepare cost is negligible.
+   */
+  search(q: string, limit: number, offset: number): UserRow[] {
+    const trimmed = q.trim();
+    if (trimmed.length === 0) return this.list(limit, offset);
+    const like = `%${trimmed}%`;
+    return this.db
+      .prepare(
+        `SELECT * FROM users
+         WHERE username LIKE ? COLLATE NOCASE
+            OR first_name LIKE ? COLLATE NOCASE
+            OR last_name LIKE ? COLLATE NOCASE
+            OR telegram_user_id LIKE ?
+         ORDER BY id ASC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(like, like, like, like, limit, offset) as unknown as UserRow[];
+  }
+
+  countSearch(q: string): number {
+    const trimmed = q.trim();
+    if (trimmed.length === 0) return this.countAll();
+    const like = `%${trimmed}%`;
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM users
+         WHERE username LIKE ? COLLATE NOCASE
+            OR first_name LIKE ? COLLATE NOCASE
+            OR last_name LIKE ? COLLATE NOCASE
+            OR telegram_user_id LIKE ?`,
+      )
+      .get(like, like, like, like) as { n: number };
+    return row.n;
+  }
+
   findByTelegramId(telegramUserId: string): UserRow | undefined {
     return this.findByTelegramIdStmt.get(telegramUserId) as unknown as UserRow | undefined;
   }

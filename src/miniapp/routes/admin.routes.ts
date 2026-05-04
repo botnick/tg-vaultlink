@@ -174,9 +174,179 @@ export function adminRoutes(deps: AdminRouteDeps): Hono<MiniAppEnv> {
     if (action !== undefined && action.length > 0) {
       opts.action = action;
     }
-    const items = repos.audit.list(opts);
+    const rows = repos.audit.list(opts);
+
+    // Enrich each row with the actor's profile so the UI can show
+    // `@username` / "Boat" instead of just `actor_user_id: 197`. Cache the
+    // user lookup to avoid one query per row of the same actor.
+    const userCache = new Map<number, { username: string | null; first_name: string | null }>();
+    const items = rows.map((r) => {
+      let actor: {
+        id: number;
+        telegram_user_id: string;
+        username: string | null;
+        first_name: string | null;
+      } | null = null;
+      if (r.actor_user_id !== null) {
+        let cached = userCache.get(r.actor_user_id);
+        if (cached === undefined) {
+          const u = repos.users.findById(r.actor_user_id);
+          cached = u
+            ? { username: u.username, first_name: u.first_name }
+            : { username: null, first_name: null };
+          userCache.set(r.actor_user_id, cached);
+        }
+        const u = repos.users.findById(r.actor_user_id);
+        if (u) {
+          actor = {
+            id: u.id,
+            telegram_user_id: u.telegram_user_id,
+            username: u.username,
+            first_name: u.first_name,
+          };
+        }
+      }
+      return { ...r, actor };
+    });
+
     c.header('Cache-Control', 'no-store');
     return c.json({ data: { items } });
+  });
+
+  /* ----------------------------------------------------------------------- *
+   * Admin — files (system-wide listing)
+   * ----------------------------------------------------------------------- */
+
+  app.get('/admin/files', (c) => {
+    ensureAdmin(c.var.isAdmin);
+    const limit = clampInt(c.req.query('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT);
+    const offset = clampInt(c.req.query('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
+    const rows = repos.files.listAll({ limit, offset });
+
+    // Enrich rows with owner + bot context so the admin UI can show
+    // "@username's photo on @qqpptbot" without a chatty per-row lookup
+    // round-trip from the frontend.
+    const userCache = new Map<number, ReturnType<typeof repos.users.findById>>();
+    const botCache = new Map<number, ReturnType<typeof repos.bots.findById>>();
+    const items = rows.map((row) => {
+      if (!userCache.has(row.owner_user_id)) {
+        userCache.set(row.owner_user_id, repos.users.findById(row.owner_user_id));
+      }
+      if (!botCache.has(row.bot_id)) {
+        botCache.set(row.bot_id, repos.bots.findById(row.bot_id));
+      }
+      const owner = userCache.get(row.owner_user_id);
+      const bot = botCache.get(row.bot_id);
+      return {
+        ...fileToAdminDto(row),
+        owner: owner
+          ? {
+              id: owner.id,
+              telegram_user_id: owner.telegram_user_id,
+              username: owner.username,
+              first_name: owner.first_name,
+            }
+          : null,
+        bot: bot ? { id: bot.id, username: bot.username, mode: bot.mode } : null,
+      };
+    });
+    const total = repos.files.countAll();
+    c.header('Cache-Control', 'no-store');
+    return c.json({ data: { items, total } });
+  });
+
+  /* ----------------------------------------------------------------------- *
+   * Admin — users (system-wide listing)
+   * ----------------------------------------------------------------------- */
+
+  app.get('/admin/users', (c) => {
+    ensureAdmin(c.var.isAdmin);
+    const limit = clampInt(c.req.query('limit'), DEFAULT_LIMIT, 1, MAX_LIMIT);
+    const offset = clampInt(c.req.query('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
+    const q = (c.req.query('q') ?? '').trim();
+    const rows =
+      q.length > 0 ? repos.users.search(q, limit, offset) : repos.users.list(limit, offset);
+    const total = q.length > 0 ? repos.users.countSearch(q) : repos.users.countAll();
+    const items = rows.map((u) => ({
+      id: u.id,
+      telegram_user_id: u.telegram_user_id,
+      username: u.username,
+      first_name: u.first_name,
+      last_name: u.last_name,
+      locale: u.locale,
+      role: u.role,
+      is_banned: u.is_banned === 1,
+      // Surfaced so the UI can decorate founder rows with the 🔑 pill and
+      // hide the promote/demote affordance when the operator is looking
+      // at one of their fellow founders.
+      is_founder: services.permission.isFounder(u),
+      created_at: u.created_at,
+      updated_at: u.updated_at,
+    }));
+    c.header('Cache-Control', 'no-store');
+    return c.json({ data: { items, total } });
+  });
+
+  /**
+   * Founder-only: change a user's role. The body shape mirrors the bot
+   * `/promote` / `/demote` commands: `{ role: 'super_admin' | 'user' }`.
+   *
+   * The auth gate is in TWO layers:
+   *   1. `adminMiddleware` — already mounted on `/admin/*`.
+   *   2. `permission.isFounder(c.var.user)` — strict ADMIN_IDS check.
+   * Plus `userService.setRole` re-checks the same predicate server-side
+   * so a missing middleware on a future endpoint can't open this path.
+   */
+  app.post('/admin/users/:id/role', async (c) => {
+    ensureAdmin(c.var.isAdmin);
+    if (!services.permission.isFounder(c.var.user)) {
+      throw new AppError(ErrorCode.PERMISSION_DENIED, 'founder only', { expose: true });
+    }
+    const id = Number.parseInt(c.req.param('id'), 10);
+    if (!Number.isFinite(id)) {
+      throw new AppError(ErrorCode.INVALID_INPUT, 'invalid user id', { expose: true });
+    }
+    const target = repos.users.findById(id);
+    if (!target) {
+      throw new AppError(ErrorCode.USER_NOT_FOUND, 'user not found', { expose: true });
+    }
+    const body = await c.req.json<{ role?: unknown }>().catch(() => ({}) as { role?: unknown });
+    const role = body.role;
+    if (role !== 'super_admin' && role !== 'user') {
+      throw new AppError(ErrorCode.INVALID_INPUT, 'role must be super_admin or user', {
+        expose: true,
+      });
+    }
+    let updated;
+    try {
+      updated = services.user.setRole(target, role, c.var.user);
+    } catch (err) {
+      // Service layer raises AppError with `expose: true` for the user-input
+      // failures (self-mutation, banned-promote, founder-demote). Forward
+      // them as 400 so the frontend can surface the message verbatim.
+      throw err;
+    }
+    services.audit.log(
+      role === 'super_admin' ? 'user.promoted_to_super_admin' : 'user.demoted_from_super_admin',
+      {
+        actorUserId: c.var.user.id,
+        targetType: 'user',
+        targetId: String(target.id),
+        metadata: { telegram_user_id: target.telegram_user_id, new_role: role },
+      },
+    );
+    c.header('Cache-Control', 'no-store');
+    return c.json({
+      data: {
+        id: updated.id,
+        telegram_user_id: updated.telegram_user_id,
+        username: updated.username,
+        first_name: updated.first_name,
+        role: updated.role,
+        is_banned: updated.is_banned === 1,
+        is_founder: services.permission.isFounder(updated),
+      },
+    });
   });
 
   app.get('/admin/bots', (c) => {

@@ -38,5 +38,8 @@ export const qk = {
     audit: (filters: { actorUserId?: string; action?: string }, page: number, pageSize: number) =>
       ['admin', 'audit', filters.actorUserId ?? '', filters.action ?? '', page, pageSize] as const,
     bots: (page: number, pageSize: number) => ['admin', 'bots', page, pageSize] as const,
+    files: (page: number, pageSize: number) => ['admin', 'files', page, pageSize] as const,
+    users: (q: string, page: number, pageSize: number) =>
+      ['admin', 'users', q, page, pageSize] as const,
   },
 } as const;

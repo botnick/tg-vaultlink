@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-05-04
+
+### Added (admin Mini App overhaul)
+
+- **System-wide file listing** — new `GET /api/v1/admin/files` returns
+  every file across every bot, newest-first, server-enriched with the
+  owner's `@username` / first name and the owning bot's username + mode.
+  No more "this file's owner is `#197`" — the admin sees `@bbbbbn5 ·
+Boat`. Powered by a new `FileRepository.listAll()`. The Mini App page
+  also makes the share code itself a tap-to-copy surface.
+- **System-wide user listing with live search** — `GET /admin/users`
+  accepts `?q=` and matches case-insensitively against `username`,
+  `first_name`, `last_name`, and `telegram_user_id`. The Mini App
+  `AdminUsers` page wires this to a 250 ms debounced input box so
+  every keystroke isn't a round-trip.
+- **Founder-only role mutator endpoint** — new `POST
+/api/v1/admin/users/:id/role` accepts `{role: 'super_admin' | 'user'}`
+  and is gated by `permission.isFounder()` (env `ADMIN_IDS` only). The
+  service-layer `userService.setRole()` re-checks the same predicate so
+  a forgotten gate on a future code path can never escalate. The Mini
+  App `AdminUsers` page renders per-row "Promote" / "Demote" buttons
+  that fire this endpoint — the buttons are hidden for non-founders,
+  for the operator's own row, and for founder targets (founders must
+  be removed from `.env` first). Audit entries
+  `user.promoted_to_super_admin` / `user.demoted_from_super_admin`
+  fire on every successful mutation.
+- **`is_founder` exposed on `/me`** so the frontend can render the
+  founder-only affordances. The auth provider exposes
+  `useAuth().isFounder` alongside `isAdmin`.
+- **Audit log enrichment** — `GET /admin/audit` returns
+  `actor: { id, telegram_user_id, username, first_name }` alongside the
+  numeric `actor_user_id` so the UI can show `@username (Boat)` instead
+  of `#197`. The Mini App `AuditLogs` page also adds a per-row
+  "show / hide JSON" toggle that pretty-prints `metadata_json` with
+  two-space indents in a scrollable preformatted block.
+
+### Changed (Mini App)
+
+- **`AdminDashboard` redesign**: aurora-mesh hero with six glass stat
+  tiles (users / files / bots / downloads / pending / active files) +
+  five gradient drill-down tiles (📁 all files, 👥 all users,
+  🚩 reports, 📜 audit, 🤖 all bots). Replaces the flat 5-tile layout.
+- **New routes**: `/admin/files` and `/admin/users` mounted under
+  `<RequireAdmin>`. Pagination + skeleton loading + error retry, same
+  pattern as the existing admin pages. Founder rows render with a
+  🔑 brand-gradient pill in the user list; promoted super admins get
+  the 👑 violet→fuchsia pill; banned rows get a 🚫 destructive pill.
+- **AdminFiles share-code is tap-to-copy** — the `<code>` block plus
+  a circular copy-icon button next to it both trigger the clipboard
+  write with haptic feedback, matching the existing `FileDetail` and
+  `CollectionDetail` pages.
+- **New `UsersIcon`** in the icon set for the new admin user listing.
+
 ## [0.2.3] - 2026-05-04
 
 ### Changed (logging hygiene)
@@ -376,7 +429,8 @@ timeout=0)` so Telegram releases the long-poll session immediately
 - Standalone and Docker runtimes.
 - Auto build & release workflow on `v*` tags.
 
-[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.4
 [0.2.3]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.3
 [0.2.2]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.2
 [0.2.1]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.1

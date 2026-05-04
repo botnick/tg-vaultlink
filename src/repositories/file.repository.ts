@@ -137,6 +137,20 @@ export class FileRepository {
     return stmt.all(ownerUserId, limit, offset) as unknown as FileRow[];
   }
 
+  /**
+   * Admin-wide listing — every file across every bot. Newest-first by id so
+   * an admin paging through gets the most recent uploads first. Includes
+   * soft-deleted rows so the admin can see the full picture and unwind a
+   * mistaken delete if needed.
+   */
+  listAll(opts?: { limit?: number; offset?: number }): FileRow[] {
+    const limit = opts?.limit ?? 20;
+    const offset = opts?.offset ?? 0;
+    return this.db
+      .prepare('SELECT * FROM files ORDER BY id DESC LIMIT ? OFFSET ?')
+      .all(limit, offset) as unknown as FileRow[];
+  }
+
   setLocked(id: number, locked: boolean): FileRow | undefined {
     return this.setLockedStmt.get({
       id,

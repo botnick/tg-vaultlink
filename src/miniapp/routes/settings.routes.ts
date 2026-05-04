@@ -44,6 +44,7 @@ export function settingsRoutes(deps: SettingsRouteDeps): Hono<MiniAppEnv> {
       locale: u.locale,
       role: u.role,
       is_admin: c.var.isAdmin === true,
+      is_founder: c.var.isFounder === true,
     };
     c.header('Cache-Control', 'no-store');
     return c.json({ data: me });

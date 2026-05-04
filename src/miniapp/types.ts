@@ -122,6 +122,11 @@ export interface MeDto {
   locale: string | null;
   role: string;
   is_admin: boolean;
+  /** True only for env-driven `ADMIN_IDS` members. Founders can promote /
+   * demote other users to / from super_admin; promoted super admins
+   * cannot. The frontend uses this flag to render the per-row promote /
+   * demote buttons on the admin user list. */
+  is_founder: boolean;
 }
 
 /** Standard error envelope. */

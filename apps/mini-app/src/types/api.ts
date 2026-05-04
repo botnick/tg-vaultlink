@@ -85,6 +85,9 @@ export interface MeUser {
   locale: string | null;
   role: UserRole;
   is_admin: boolean;
+  /** Founder flag — strict env ADMIN_IDS check. Only founders can promote
+   * / demote other users. May be missing in older server responses. */
+  is_founder?: boolean;
 }
 
 export interface MeResponse {
@@ -116,6 +119,61 @@ export interface AuditLogRow {
   target_id: string | null;
   metadata_json: string | null;
   created_at: string;
+  /** Server-enriched actor profile so the UI can show @username instead
+   * of just the numeric `actor_user_id`. `null` for system-generated
+   * entries (e.g. boot-time audit lines) or if the actor row vanished. */
+  actor?: {
+    id: number;
+    telegram_user_id: string;
+    username: string | null;
+    first_name: string | null;
+  } | null;
+}
+
+/** Shared admin-side enrichment block: every "all-X" listing includes the
+ * full owner / bot context server-side so the UI doesn't fan out queries. */
+export interface AdminFileRow {
+  id: number;
+  code: string;
+  bot_id: number;
+  owner_user_id: number;
+  file_type: string;
+  file_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  visibility: string;
+  has_password: boolean;
+  is_locked: boolean;
+  is_deleted: boolean;
+  expires_at: string | null;
+  download_count: number;
+  telegram_file_id: string;
+  created_at: string;
+  updated_at: string;
+  owner: {
+    id: number;
+    telegram_user_id: string;
+    username: string | null;
+    first_name: string | null;
+  } | null;
+  bot: { id: number; username: string; mode: string } | null;
+}
+
+export interface AdminUserRow {
+  id: number;
+  telegram_user_id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  locale: string | null;
+  role: string;
+  is_banned: boolean;
+  /** Server-flagged founder (env `ADMIN_IDS` member). Used by the admin
+   * user list to render the 🔑 pill and to suppress demote on rows the
+   * operator can't actually demote (founders must be removed from .env). */
+  is_founder?: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 /* ---------- Admin ---------- */

@@ -27,6 +27,8 @@ import { MyCollections } from './pages/MyCollections.js';
 import { CollectionDetail as CollectionDetailPage } from './pages/CollectionDetail.js';
 import { Settings } from './pages/Settings.js';
 import { AdminDashboard } from './pages/AdminDashboard.js';
+import { AdminFiles } from './pages/AdminFiles.js';
+import { AdminUsers } from './pages/AdminUsers.js';
 import { Reports } from './pages/Reports.js';
 import { AuditLogs } from './pages/AuditLogs.js';
 import { NotFound } from './pages/NotFound.js';
@@ -125,6 +127,22 @@ function AppShell(): JSX.Element {
             element={
               <RequireAdmin>
                 <AuditLogs />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/files"
+            element={
+              <RequireAdmin>
+                <AdminFiles />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <RequireAdmin>
+                <AdminUsers />
               </RequireAdmin>
             }
           />
