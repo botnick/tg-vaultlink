@@ -36,6 +36,7 @@ import { botsRoutes } from './routes/bots.routes.js';
 import { reportsRoutes } from './routes/reports.routes.js';
 import { adminRoutes } from './routes/admin.routes.js';
 import { collectionsRoutes } from './routes/collections.routes.js';
+import { broadcastsRoutes } from './routes/broadcasts.routes.js';
 
 const DEFAULT_PORT = 8081;
 
@@ -185,6 +186,7 @@ export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
   app.route('/api/v1', collectionsRoutes({ config, services, repos }));
   app.route('/api/v1', botsRoutes({ services, repos }));
   app.route('/api/v1', reportsRoutes({ services, repos }));
+  app.route('/api/v1', broadcastsRoutes({ services, repos }));
   app.route('/api/v1', adminRoutes({ services, repos }));
 
   app.notFound((c) => {

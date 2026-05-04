@@ -38,6 +38,7 @@ export interface UserRow {
   locale: string | null;
   role: UserRole;
   is_banned: number; // 0 | 1
+  broadcast_unsubscribed: number; // 0 | 1 — global broadcast opt-out
   created_at: string;
   updated_at: string;
 }
@@ -196,4 +197,98 @@ export interface CollectionDraftItemRow {
   caption: string | null;
   sort_order: number;
   created_at: string;
+}
+
+/* ------------------------------------------------------------------------- *
+ * Wave 8 — Broadcasts
+ * ------------------------------------------------------------------------- */
+
+export type BroadcastStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'sending'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
+
+export type BroadcastRecipientStatus =
+  | 'pending'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'blocked'
+  | 'cancelled';
+
+export type BroadcastParseMode = 'HTML' | 'MarkdownV2';
+
+/** Inline keyboard button (text + URL only — no callback_data in v0.3). */
+export interface BroadcastButton {
+  text: string;
+  url: string;
+}
+
+/** Audience filter, persisted as JSON in `broadcasts.audience_json`. */
+export interface BroadcastAudience {
+  /** 'all' | 'en' | 'th' */
+  locale: 'all' | 'en' | 'th';
+  /** 'all' | 'super_admin' | 'user' */
+  role: 'all' | 'super_admin' | 'user';
+  /** When true, banned users are excluded (default true). */
+  exclude_banned: boolean;
+  /** When true, users who set /stop_broadcasts are excluded (default true). */
+  exclude_unsubscribed: boolean;
+  /**
+   * Only users registered (created_at) within the last N days. `null` =
+   * no constraint. Useful for re-engagement of recent signups only.
+   */
+  registered_within_days: number | null;
+  /**
+   * When non-empty, broadcast goes ONLY to these users (overrides every
+   * other filter). Stored as Telegram user IDs (string form, matching
+   * `users.telegram_user_id`).
+   */
+  user_ids: string[];
+}
+
+export interface BroadcastRow {
+  id: number;
+  bot_id: number;
+  created_by: number;
+  status: BroadcastStatus;
+  text: string;
+  parse_mode: BroadcastParseMode | null;
+  media_type: string | null;
+  media_file_id: string | null;
+  /** JSON-stringified `BroadcastButton[][]` (rows × buttons) or null. */
+  buttons_json: string | null;
+  disable_web_page_preview: number; // 0 | 1
+  protect_content: number; // 0 | 1
+  silent: number; // 0 | 1
+  audience_json: string;
+  audience_count: number;
+  scheduled_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  count_sent: number;
+  count_failed: number;
+  count_blocked: number;
+  count_pending: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BroadcastRecipientRow {
+  id: number;
+  broadcast_id: number;
+  user_id: number;
+  telegram_user_id: string;
+  status: BroadcastRecipientStatus;
+  message_id: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  retry_count: number;
+  next_attempt_at: string | null;
+  sent_at: string | null;
+  failed_at: string | null;
 }

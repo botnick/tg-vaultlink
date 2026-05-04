@@ -42,4 +42,13 @@ export const qk = {
     users: (q: string, page: number, pageSize: number) =>
       ['admin', 'users', q, page, pageSize] as const,
   },
+
+  broadcasts: {
+    all: ['broadcasts'] as const,
+    list: (status: string | null, botId: number | null, page: number, pageSize: number) =>
+      ['broadcasts', 'list', status ?? '', botId ?? 0, page, pageSize] as const,
+    detail: (id: number | string) => ['broadcasts', 'detail', String(id)] as const,
+    recipients: (id: number | string, status: string | null, page: number, pageSize: number) =>
+      ['broadcasts', 'recipients', String(id), status ?? '', page, pageSize] as const,
+  },
 } as const;

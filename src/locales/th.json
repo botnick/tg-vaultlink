@@ -207,5 +207,10 @@
   "common.nothing_to_cancel": "ไม่มีอะไรที่ต้องยกเลิก",
   "common.confirm_yes": "✅ ยืนยัน",
   "common.confirm_no": "❌ ไม่ใช่",
-  "common.button.close": "✖️ ปิด"
+  "common.button.close": "✖️ ปิด",
+
+  "broadcast.opt_out.confirmed": "🔕 คุณยกเลิกการรับประกาศแล้ว — สั่ง /start_broadcasts ถ้าต้องการกลับมารับ",
+  "broadcast.opt_out.already": "คุณได้ยกเลิกการรับประกาศไว้แล้ว",
+  "broadcast.opt_in.confirmed": "🔔 กลับมารับประกาศแล้ว",
+  "broadcast.opt_in.already": "คุณยังเป็นสมาชิกรับประกาศอยู่"
 }

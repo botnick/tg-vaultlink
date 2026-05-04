@@ -31,6 +31,9 @@ import { AdminFiles } from './pages/AdminFiles.js';
 import { AdminUsers } from './pages/AdminUsers.js';
 import { Reports } from './pages/Reports.js';
 import { AuditLogs } from './pages/AuditLogs.js';
+import { Broadcasts } from './pages/Broadcasts.js';
+import { BroadcastComposer } from './pages/BroadcastComposer.js';
+import { BroadcastDetail } from './pages/BroadcastDetail.js';
 import { NotFound } from './pages/NotFound.js';
 import { expandWebApp, hideBackButton, readyWebApp } from './lib/telegram.js';
 import { SkeletonList } from './components/SkeletonCard.js';
@@ -143,6 +146,38 @@ function AppShell(): JSX.Element {
             element={
               <RequireAdmin>
                 <AdminUsers />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/broadcasts"
+            element={
+              <RequireAdmin>
+                <Broadcasts />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/broadcasts/new"
+            element={
+              <RequireAdmin>
+                <BroadcastComposer />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/broadcasts/:id"
+            element={
+              <RequireAdmin>
+                <BroadcastDetail />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/broadcasts/:id/edit"
+            element={
+              <RequireAdmin>
+                <BroadcastComposer />
               </RequireAdmin>
             }
           />

@@ -20,6 +20,7 @@ import { ReportService } from '../src/services/report.service.js';
 import { SettingsService } from '../src/services/settings.service.js';
 import { UserService } from '../src/services/user.service.js';
 import { ShareService } from '../src/services/share.service.js';
+import { BroadcastService } from '../src/services/broadcast.service.js';
 
 import { createMiniAppServer } from '../src/miniapp/server.js';
 import type { MiniAppServer } from '../src/miniapp/server.js';
@@ -112,6 +113,14 @@ function wire(): Wired {
     config: env.config,
   });
 
+  const broadcast = new BroadcastService(
+    env.repos.broadcasts,
+    env.repos.bots,
+    permission,
+    audit,
+    env.config,
+  );
+
   const services: AppServices = {
     file: fileSvc,
     bot: botSvc,
@@ -122,6 +131,7 @@ function wire(): Wired {
     report,
     audit,
     share,
+    broadcast,
   };
 
   const repos: AppRepos = {
@@ -135,6 +145,7 @@ function wire(): Wired {
     rateLimit: env.repos.rateLimit,
     collections: env.repos.collections,
     collectionDrafts: env.repos.collectionDrafts,
+    broadcasts: env.repos.broadcasts,
   };
 
   const server = createMiniAppServer({ config: env.config, services, repos });

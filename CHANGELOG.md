@@ -7,6 +7,128 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-04
+
+### Added (broadcast system)
+
+- **Full broadcast system, end-to-end.** Operators can compose, schedule,
+  and send announcement messages to every user of any bot they own.
+  Founders can broadcast on behalf of any bot. Persisted, resumable,
+  rate-limited, idempotent at the recipient level. Composer + status
+  surface live entirely in the Mini App.
+- **Schema:** new `broadcasts` and `broadcast_recipients` tables (migration
+  `003_broadcasts.sql`). `broadcasts` carries the content + audience
+  snapshot + denormalized progress counters; `broadcast_recipients` is
+  the per-user delivery row with status, retry count, error code, and
+  message id. `users.broadcast_unsubscribed` flag added for the global
+  opt-out.
+- **`BroadcastRepository`**: insert / updateDraft / list / detail /
+  delete / atomic `tryTransition` for status flips / `materializeRecipients`
+  (single `INSERT OR IGNORE … SELECT FROM users WHERE <audience>` so a
+  re-run after a crash is a no-op) / `claimPending` (atomic batch claim
+  via SELECT-id + UPDATE-WHERE-status, single-process safe within
+  SQLite's writer lock) / `markSent` / `markBlocked` / `markFailed` /
+  `rescheduleForRetry` / `recomputeCounts`.
+- **`BroadcastService`**: founder-or-bot-owner permission gate; text /
+  button / audience JSON validation (URL scheme allowlist —
+  http/https/tg only, max button rows + per-row caps); `audiencePreview`
+  (count + 5 sample); typed-confirmation-required `send` ("SEND"
+  literal); `schedule` with ISO 8601 input; idempotent `cancel`;
+  `deleteDraft`. Audit entries on every write
+  (`broadcast.create / send / cancel / schedule / delete`).
+- **`BroadcastWorker`**: 1 Hz tick loop, batches of 50 recipients per
+  broadcast per tick, dispatches via the owning bot's grammY `api`.
+  Resumable on restart — anything left in `sending` resumes from
+  pending recipients on the next tick. Rate limiting delegated to the
+  per-bot throttler that's already on every bot's `api` (no second
+  token bucket). Error classification (extracted to
+  `utils/telegramErrors.ts`):
+    - `403 / 400 unreachable` (blocked / chat-not-found / deactivated)
+      → terminal `blocked`, never retried.
+    - `429` with `parameters.retry_after` → `pending` with
+      `next_attempt_at` set, retry budget per-recipient (default 3).
+    - `5xx` → `pending` with exponential backoff (2s → 4s → 8s).
+    - Other `4xx` → terminal `failed` with the description recorded.
+- **Audience filter:** locale (`all / en / th`), role
+  (`all / super_admin / user`), `exclude_banned`, `exclude_unsubscribed`,
+  `registered_within_days`, and an explicit `user_ids` allowlist that
+  short-circuits every other filter (test-send / "ping these specific
+  users" workflows).
+- **Template variables in the message body:** `{{first_name}}`,
+  `{{last_name}}`, `{{full_name}}`, `{{username}}`, `{{user_id}}` —
+  substituted at dispatch time and HTML-escaped or
+  MarkdownV2-escaped according to the broadcast's `parse_mode` so a
+  user with `<` in their name doesn't break markup.
+- **Inline buttons:** up to 8 rows × 4 buttons each, text + url only.
+  URL scheme whitelisted to `http(s)` and `tg://` so the broadcaster
+  can never become a phishing redirector.
+- **Media via Telegram `file_id`:** photo / video / document /
+  animation. The composer takes a `file_id` you obtain by forwarding
+  the file to your bot first; cross-bot send is rejected at dispatch
+  time because Telegram `file_id`s are bot-scoped (the worker would
+  surface a 400 from Telegram, not a silent corruption).
+- **Flags:** `silent` (no notification sound), `protect_content` (no
+  forward), `disable_web_page_preview`.
+- **Lifecycle:** `draft → scheduled → sending → completed`. Or
+  `draft → sending → completed`. Or
+  `* → cancelled`. Status transitions are atomic — concurrent flips
+  are rejected at the SQL level and the second caller gets the
+  current row back.
+- **Bot commands:** `/stop_broadcasts` flips
+  `users.broadcast_unsubscribed=1` and audits
+  `broadcast.user_unsubscribed`. `/start_broadcasts` re-subscribes.
+- **Mini App API** — 11 endpoints under `/api/v1/broadcasts` (auth
+  required, founder-or-owner enforced by service):
+  `POST / GET / GET :id / PATCH :id / DELETE :id /
+   POST :id/audience-preview / POST :id/send / POST :id/schedule /
+   POST :id/cancel / GET :id/recipients`. Recipients endpoint
+  enriches each row with the user's `username` + `first_name` so the
+  detail table doesn't fan out N profile lookups from the frontend.
+- **Mini App pages** — three new screens:
+    - `/admin/broadcasts` — paginated list with status filter chips
+      (all / draft / scheduled / sending / completed / cancelled /
+      failed), live progress bar on `sending` rows, 4-second poll.
+    - `/admin/broadcasts/new` and `/admin/broadcasts/:id/edit` —
+      single-screen composer: bot picker, text editor with parse-mode
+      toggle, flags (silent / protect / no preview), media file_id
+      input, inline buttons editor, audience filter, audience
+      preview button, Save Draft / Send Now / Schedule. Send-Now
+      opens a confirmation dialog requiring the operator to type
+      `SEND`.
+    - `/admin/broadcasts/:id` — read-only detail with rendered
+      content, audience snapshot, live progress (2-second poll while
+      sending), per-recipient table with status filter chips and
+      pagination, action bar with Edit (drafts only) / Cancel
+      (anything pre-completion).
+- **Locales:** every key in the broadcast surface translated en + th.
+
+### Changed
+
+- `ChildBotManager` exposes `getByBotId(botId)` for O(1) lookups by
+  the local `managed_bots.id` (broadcast worker dispatches by
+  `bot_id`). Indexed alongside the existing username map; both maps
+  stay in sync on start / stop / runner-died.
+- Extracted `isUnreachableChatError` from `bot/middlewares/error.middleware.ts`
+  to `utils/telegramErrors.ts` so the broadcast worker can share it
+  without importing bot-side modules.
+- Added `getRetryAfterSeconds` and `isTelegramServerError` helpers
+  alongside it for the worker's classifier.
+
+### Notes
+
+- 21 new tests (`broadcast.service.test.ts` + `broadcast.worker.test.ts`).
+  Total now 185 (was 164). Lint clean, typecheck clean, Mini App
+  production build is 333 KB JS / 26 KB CSS (94 KB / 6 KB gzipped).
+- Resumable across restarts — broadcasts in `sending` on boot pick up
+  from `pending` recipients on the next worker tick, no manual
+  intervention needed.
+- Single-process design — production deployments run one Node process
+  per database, which the rest of the app already assumes. Multi-process
+  would race on the recipient claim despite SQLite's writer lock; not
+  needed at the project's 5,000-user scale and explicitly deferred.
+- Edit / delete sent messages, Mini App media upload, A/B variants,
+  and per-bot opt-out are tracked for v0.3.1.
+
 ## [0.2.5] - 2026-05-02
 
 ### Changed (admin Mini App — compact pass)

@@ -32,6 +32,8 @@ import type { SettingsRepository } from '../repositories/settings.repository.js'
 import type { RateLimitRepository } from '../repositories/rateLimit.repository.js';
 import type { CollectionRepository } from '../repositories/collection.repository.js';
 import type { CollectionDraftRepository } from '../repositories/collectionDraft.repository.js';
+import type { BroadcastRepository } from '../repositories/broadcast.repository.js';
+import type { BroadcastService } from '../services/broadcast.service.js';
 
 /** Domain services available to every handler. */
 export interface AppServices {
@@ -45,6 +47,8 @@ export interface AppServices {
   audit: AuditService;
   /** Wave 7 — unified shares (single files + collections). */
   share: ShareService;
+  /** Wave 8 — announcement broadcasts. */
+  broadcast: BroadcastService;
 }
 
 /** Repositories available to every handler. */
@@ -60,6 +64,8 @@ export interface AppRepos {
   /** Wave 7 — collections + drafts. */
   collections: CollectionRepository;
   collectionDrafts: CollectionDraftRepository;
+  /** Wave 8 — broadcasts + per-recipient delivery rows. */
+  broadcasts: BroadcastRepository;
 }
 
 /**

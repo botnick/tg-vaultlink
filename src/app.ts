@@ -26,6 +26,7 @@ import { SettingsRepository } from './repositories/settings.repository.js';
 import { RateLimitRepository } from './repositories/rateLimit.repository.js';
 import { CollectionRepository } from './repositories/collection.repository.js';
 import { CollectionDraftRepository } from './repositories/collectionDraft.repository.js';
+import { BroadcastRepository } from './repositories/broadcast.repository.js';
 
 import { AuditService } from './services/audit.service.js';
 import { SettingsService } from './services/settings.service.js';
@@ -36,6 +37,8 @@ import { FileService } from './services/file.service.js';
 import { BotService } from './services/bot.service.js';
 import { ReportService } from './services/report.service.js';
 import { ShareService } from './services/share.service.js';
+import { BroadcastService } from './services/broadcast.service.js';
+import { BroadcastWorker } from './services/broadcast.worker.js';
 
 import { bootstrapMainBot, defaultGetMeFn } from './bot/mainBot.js';
 import { ChildBotManager } from './bot/childBotManager.js';
@@ -69,6 +72,7 @@ export async function startApp(): Promise<AppHandle> {
     rateLimit: new RateLimitRepository(db),
     collections: new CollectionRepository(db),
     collectionDrafts: new CollectionDraftRepository(db),
+    broadcasts: new BroadcastRepository(db),
   };
 
   // 3) Services (in dependency order).
@@ -88,6 +92,7 @@ export async function startApp(): Promise<AppHandle> {
     audit,
     config,
   });
+  const broadcast = new BroadcastService(repos.broadcasts, repos.bots, permission, audit, config);
 
   const services: AppServices = {
     file,
@@ -99,6 +104,7 @@ export async function startApp(): Promise<AppHandle> {
     settings,
     audit,
     share,
+    broadcast,
   };
 
   // 4) Optional webhook listener — built once when TELEGRAM_UPDATE_MODE=webhook
@@ -328,6 +334,22 @@ export async function startApp(): Promise<AppHandle> {
     }
   }
 
+  // 8.5) Broadcast worker — picks up scheduled + sending broadcasts and
+  // fans them out via the appropriate bot. Resumable across restarts: any
+  // broadcast left in 'sending' on boot resumes from its remaining pending
+  // recipients on the next tick. Single-process by design (the recipient
+  // claim is atomic within SQLite's writer lock, but two workers would
+  // race across processes).
+  const broadcastWorker = new BroadcastWorker({
+    repo: repos.broadcasts,
+    users: repos.users,
+    resolveBot: (botId: number) => {
+      if (botId === main.record.id) return main.bot;
+      return childManager.getByBotId(botId);
+    },
+  });
+  broadcastWorker.start();
+
   // 9) Optionally start the Mini App backend. The module is loaded
   // dynamically so a misconfigured Mini App build cannot block the bot's
   // hot-path bootstrap.
@@ -375,6 +397,12 @@ export async function startApp(): Promise<AppHandle> {
     if (draftCleanupTimer !== undefined) {
       clearInterval(draftCleanupTimer);
       draftCleanupTimer = undefined;
+    }
+
+    try {
+      broadcastWorker.stop();
+    } catch (err) {
+      log.warn({ err }, 'failed to stop broadcast worker');
     }
 
     try {

@@ -25,6 +25,7 @@ import { SettingsRepository } from '../../src/repositories/settings.repository.j
 import { RateLimitRepository } from '../../src/repositories/rateLimit.repository.js';
 import { CollectionRepository } from '../../src/repositories/collection.repository.js';
 import { CollectionDraftRepository } from '../../src/repositories/collectionDraft.repository.js';
+import { BroadcastRepository } from '../../src/repositories/broadcast.repository.js';
 
 import type { Config } from '../../src/config/env.js';
 import type { BotMode, ManagedBotRow, UserRole, UserRow } from '../../src/types/index.js';
@@ -41,6 +42,7 @@ export interface TestRepos {
   rateLimit: RateLimitRepository;
   collections: CollectionRepository;
   collectionDrafts: CollectionDraftRepository;
+  broadcasts: BroadcastRepository;
 }
 
 export interface TestEnv {
@@ -141,7 +143,7 @@ export function buildTestEnv(overrides?: Partial<Config>): TestEnv {
   const migrationsDir = path.resolve(here, '../../src/db/migrations');
   // Apply every migration found on disk in lexicographic order so tests get
   // the same schema the runtime migration runner produces.
-  const migrationFiles = ['001_init.sql', '002_collections.sql'];
+  const migrationFiles = ['001_init.sql', '002_collections.sql', '003_broadcasts.sql'];
   for (const name of migrationFiles) {
     const sql = readFileSync(path.resolve(migrationsDir, name), 'utf8');
     db.exec(sql);
@@ -158,6 +160,7 @@ export function buildTestEnv(overrides?: Partial<Config>): TestEnv {
     rateLimit: new RateLimitRepository(db),
     collections: new CollectionRepository(db),
     collectionDrafts: new CollectionDraftRepository(db),
+    broadcasts: new BroadcastRepository(db),
   };
 
   const config = Object.freeze({ ...defaultConfig(), ...(overrides ?? {}) }) as Config;

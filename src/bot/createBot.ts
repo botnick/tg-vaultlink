@@ -30,6 +30,7 @@ import { registerSettingsRouter } from './routers/settings.router.js';
 import { registerCancelRouter } from './routers/cancel.router.js';
 import { registerCollectionRouter } from './routers/collection.router.js';
 import { registerMainMenuRouter } from './routers/main_menu.router.js';
+import { registerBroadcastRouter } from './routers/broadcast.router.js';
 import type { ChildBotManager } from './childBotManager.js';
 
 export interface CreateBotOptions {
@@ -125,6 +126,7 @@ export function createBot(opts: CreateBotOptions): Bot<AppContext> {
   registerCancelRouter(composer);
   registerCollectionRouter(composer);
   registerMainMenuRouter(composer);
+  registerBroadcastRouter(composer);
   // Decode is last among text-handling routers so commands always win.
   registerDecodeRouter(composer);
   bot.use(composer);

@@ -22,6 +22,7 @@ export class UserRepository {
   private readonly findByIdStmt;
   private readonly insertStmt;
   private readonly setBannedStmt;
+  private readonly setBroadcastUnsubscribedStmt;
   private readonly countAllStmt;
   private readonly listStmt;
   private readonly listByRoleStmt;
@@ -43,11 +44,29 @@ export class UserRepository {
       `UPDATE users SET is_banned = @banned, updated_at = @now WHERE id = @id RETURNING *`,
     );
 
+    this.setBroadcastUnsubscribedStmt = db.prepare(
+      `UPDATE users SET broadcast_unsubscribed = @flag, updated_at = @now
+         WHERE id = @id RETURNING *`,
+    );
+
     this.countAllStmt = db.prepare('SELECT COUNT(*) AS n FROM users');
     this.listStmt = db.prepare('SELECT * FROM users ORDER BY id ASC LIMIT ? OFFSET ?');
     this.listByRoleStmt = db.prepare(
       'SELECT * FROM users WHERE role = ? ORDER BY id ASC LIMIT ? OFFSET ?',
     );
+  }
+
+  /** Flip the global broadcast opt-out flag. Used by `/stop_broadcasts`. */
+  setBroadcastUnsubscribed(id: number, flag: boolean): UserRow {
+    const row = this.setBroadcastUnsubscribedStmt.get({
+      id,
+      flag: flag ? 1 : 0,
+      now: nowIso(),
+    }) as unknown as UserRow | undefined;
+    if (!row) {
+      throw new AppError(ErrorCode.USER_NOT_FOUND, `User ${id} not found`, { meta: { id } });
+    }
+    return row;
   }
 
   /** All users with the given role (e.g. `super_admin`). Stable order by id. */

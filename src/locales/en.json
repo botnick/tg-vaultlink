@@ -207,5 +207,10 @@
   "common.nothing_to_cancel": "Nothing to cancel.",
   "common.confirm_yes": "✅ Yes",
   "common.confirm_no": "❌ No",
-  "common.button.close": "✖️ Close"
+  "common.button.close": "✖️ Close",
+
+  "broadcast.opt_out.confirmed": "🔕 You are now opted out of broadcasts. Run /start_broadcasts to re-subscribe.",
+  "broadcast.opt_out.already": "You're already opted out.",
+  "broadcast.opt_in.confirmed": "🔔 You're back on the broadcast list.",
+  "broadcast.opt_in.already": "You were already subscribed."
 }

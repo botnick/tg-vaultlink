@@ -224,6 +224,92 @@ export interface CollectionDetail extends CollectionSummary {
   counts_by_type: Partial<Record<FileType, number>>;
 }
 
+/* ---------- Broadcasts (v0.3) ---------- */
+
+export type BroadcastStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'sending'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
+
+export type BroadcastRecipientStatus =
+  | 'pending'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'blocked'
+  | 'cancelled';
+
+export type BroadcastParseMode = 'HTML' | 'MarkdownV2' | null;
+
+export interface BroadcastButton {
+  text: string;
+  url: string;
+}
+
+export interface BroadcastAudience {
+  locale: 'all' | 'en' | 'th';
+  role: 'all' | 'super_admin' | 'user';
+  exclude_banned: boolean;
+  exclude_unsubscribed: boolean;
+  registered_within_days: number | null;
+  user_ids: string[];
+}
+
+export interface BroadcastRow {
+  id: number;
+  bot_id: number;
+  created_by: number;
+  status: BroadcastStatus;
+  text: string;
+  parse_mode: BroadcastParseMode;
+  media_type: string | null;
+  media_file_id: string | null;
+  buttons: BroadcastButton[][] | null;
+  disable_web_page_preview: boolean;
+  protect_content: boolean;
+  silent: boolean;
+  audience: BroadcastAudience;
+  audience_count: number;
+  scheduled_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  count_sent: number;
+  count_failed: number;
+  count_blocked: number;
+  count_pending: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BroadcastRecipientRow {
+  id: number;
+  broadcast_id: number;
+  user_id: number;
+  telegram_user_id: string;
+  status: BroadcastRecipientStatus;
+  message_id: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  retry_count: number;
+  sent_at: string | null;
+  failed_at: string | null;
+  user: { username: string | null; first_name: string | null } | null;
+}
+
+export interface BroadcastAudiencePreview {
+  count: number;
+  sample: Array<{
+    id: number;
+    telegram_user_id: string;
+    username: string | null;
+    first_name: string | null;
+  }>;
+}
+
 /* ---------- Pagination envelope ---------- */
 
 export interface PageResponse<T> {

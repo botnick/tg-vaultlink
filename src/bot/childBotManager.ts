@@ -47,14 +47,27 @@ interface RunningChild {
   handle: RunnerHandle | null;
   mode: 'long_poll' | 'webhook';
   telegramBotId: string;
+  /** Local managed_bots.id — used by lookup-by-id consumers (e.g. broadcaster). */
+  botId: number;
 }
 
 export class ChildBotManager {
   private readonly running = new Map<string, RunningChild>();
+  /** Secondary index: managed_bots.id → username, for O(1) lookups by id. */
+  private readonly idIndex = new Map<number, string>();
   private readonly deps: ChildBotManagerDeps;
 
   constructor(deps: ChildBotManagerDeps) {
     this.deps = deps;
+  }
+
+  /** Resolve a running child by its managed_bots row id. Returns null when
+   * the bot is not currently running (offline, errored, or removed). */
+  getByBotId(botId: number): Bot<AppContext> | null {
+    const username = this.idIndex.get(botId);
+    if (!username) return null;
+    const child = this.running.get(username);
+    return child ? child.bot : null;
   }
 
   /**
@@ -124,7 +137,9 @@ export class ChildBotManager {
         handle: null,
         mode,
         telegramBotId: record.telegram_bot_id,
+        botId: record.id,
       });
+      this.idIndex.set(record.id, username);
       log.info({ username }, 'child bot started');
       return;
     }
@@ -152,7 +167,9 @@ export class ChildBotManager {
       handle,
       mode,
       telegramBotId: record.telegram_bot_id,
+      botId: record.id,
     });
+    this.idIndex.set(record.id, username);
     log.info({ username }, 'child bot started');
 
     // The runner exposes a `task()` promise that resolves when the polling
@@ -168,9 +185,11 @@ export class ChildBotManager {
         .then(
           () => {
             this.running.delete(username);
+            this.idIndex.delete(record.id);
           },
           (err: unknown) => {
             this.running.delete(username);
+            this.idIndex.delete(record.id);
             const msg = sanitizeError(err);
             log.error({ username, err: msg }, 'child bot runner died');
             try {
@@ -189,6 +208,7 @@ export class ChildBotManager {
     const child = this.running.get(username);
     if (!child) return;
     this.running.delete(username);
+    this.idIndex.delete(child.botId);
     await this.stopChild(child, username);
   }
 
@@ -200,6 +220,7 @@ export class ChildBotManager {
         const child = this.running.get(username);
         this.running.delete(username);
         if (!child) return;
+        this.idIndex.delete(child.botId);
         await this.stopChild(child, username);
       }),
     );

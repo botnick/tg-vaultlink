@@ -23,6 +23,7 @@ import {
   FlagIcon,
   ListIcon,
   UsersIcon,
+  InboxIcon,
 } from '../components/icons.js';
 
 interface ShortcutRowProps {
@@ -150,6 +151,13 @@ export function AdminDashboard(): JSX.Element {
             iconBg="bg-gradient-to-br from-brand-fuchsia to-brand-pink"
             title={t('admin.shortcuts.reports')}
             subtitle={t('admin.stats.pending_reports')}
+          />
+          <ShortcutRow
+            to="/admin/broadcasts"
+            icon={<InboxIcon size={18} />}
+            iconBg="bg-gradient-to-br from-brand-violet to-brand-pink"
+            title={t('admin.shortcuts.broadcasts')}
+            subtitle={t('admin.shortcuts.broadcasts_subtitle')}
           />
           <ShortcutRow
             to="/admin/audit"
