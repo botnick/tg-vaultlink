@@ -23,7 +23,9 @@
     "allowSyntheticDefaultImports": true,
     "verbatimModuleSyntax": false,
 
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+
+    "noEmit": true
   },
   "include": ["src/**/*", "src/**/*.json"],
   "exclude": ["node_modules", "dist"]
