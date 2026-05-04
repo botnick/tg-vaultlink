@@ -9,6 +9,7 @@
  */
 
 import type { Bot } from 'grammy';
+import { GrammyError } from 'grammy';
 import { AppError, ErrorCode } from '../../utils/errors.js';
 import { getLogger } from '../../logger/logger.js';
 import { t as translate, isSupportedLocale } from '../../utils/i18n.js';
@@ -16,6 +17,27 @@ import type { Locale } from '../../types/index.js';
 import type { AppContext } from '../context.js';
 import type { Config } from '../../config/env.js';
 import { formatBytes } from '../../utils/formatBytes.js';
+
+/**
+ * Telegram error patterns that indicate the bot can no longer reach the
+ * chat — bot blocked, user deleted account, bot kicked from group, etc.
+ * These are expected outcomes (the user voted with their feet), not bugs;
+ * we should log at `warn` and skip any retry / reply attempt because the
+ * follow-up call would just hit the same wall.
+ */
+function isUnreachableChatError(err: unknown): boolean {
+  if (!(err instanceof GrammyError)) return false;
+  const code = (err as { error_code?: number }).error_code;
+  if (code !== 403 && code !== 400) return false;
+  const desc = ((err as { description?: string }).description ?? err.message ?? '').toLowerCase();
+  return (
+    desc.includes('bot was blocked by the user') ||
+    desc.includes("bot can't initiate conversation") ||
+    desc.includes('user is deactivated') ||
+    desc.includes('chat not found') ||
+    desc.includes('bot was kicked')
+  );
+}
 
 /**
  * Map an `AppError` code to a localized message. Returns `null` when the code
@@ -106,6 +128,18 @@ export function installErrorHandler(bot: Bot<AppContext>, config: Config): void 
       const msg =
         localizedMessageFor(cause, locale, config) ?? translate(locale, 'common.error.internal');
       void ctx?.reply(msg, { parse_mode: 'HTML' }).catch(() => undefined);
+      return;
+    }
+
+    // Telegram-side "bot can't reach this chat" errors (user blocked, kicked,
+    // deactivated). These are normal user behaviour; logging them at error
+    // pollutes the alerting feed AND attempting to reply would just hit the
+    // same wall and produce another error log line.
+    if (isUnreachableChatError(cause)) {
+      log.warn(
+        { err: cause, updateId },
+        'bot handler: chat unreachable (user blocked / deactivated / kicked)',
+      );
       return;
     }
 

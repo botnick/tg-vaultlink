@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-05-04
+
+### Changed (logging hygiene)
+
+- **Mini App request logger split by status.** 5xx still logs at `error`
+  (real bug), but 4xx — auth-expired 401s, permission-denied 403s, probe
+  404s — drops to `warn`. Telegram clients aggressively retry the
+  `/me` / `/files` / `/bots` endpoints when initData is briefly stale,
+  so the previous "every 4xx is an error" rule was flooding the alert
+  feed with normal traffic.
+- **`Forbidden: bot was blocked by the user`** is now caught explicitly
+  in the bot error boundary and logged at `warn` — not as an "unhandled
+  bot error". Same handling for `chat not found`, `user is deactivated`,
+  `bot was kicked`, and `bot can't initiate conversation`. These are
+  user-side outcomes (the recipient walked away), not bugs to alert on.
+  The error boundary also stops trying to reply with a generic message
+  in those cases — the next `sendMessage` would just hit the same wall
+  and produce another error log line.
+
 ## [0.2.2] - 2026-05-03
 
 ### Fixed
@@ -357,7 +376,8 @@ timeout=0)` so Telegram releases the long-poll session immediately
 - Standalone and Docker runtimes.
 - Auto build & release workflow on `v*` tags.
 
-[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/botnick/tg-vaultlink/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.3
 [0.2.2]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.2
 [0.2.1]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.1
 [0.2.0]: https://github.com/botnick/tg-vaultlink/releases/tag/v0.2.0

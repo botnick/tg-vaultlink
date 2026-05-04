@@ -94,11 +94,19 @@ export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
   // a hand-rolled config object directly) don't trigger the env-loader's
   // strict validation when the server is built.
   let cachedLogger: Logger | undefined;
-  const log: Pick<Logger, 'info' | 'error'> = {
+  const log: Pick<Logger, 'info' | 'warn' | 'error'> = {
     info: (...args: unknown[]) => {
       try {
         cachedLogger ??= getLogger();
         (cachedLogger.info as (...a: unknown[]) => void)(...args);
+      } catch {
+        // Logger unavailable in this environment — drop the line silently.
+      }
+    },
+    warn: (...args: unknown[]) => {
+      try {
+        cachedLogger ??= getLogger();
+        (cachedLogger.warn as (...a: unknown[]) => void)(...args);
       } catch {
         // Logger unavailable in this environment — drop the line silently.
       }
@@ -131,10 +139,11 @@ export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
     try {
       await next();
     } finally {
-      // 4xx and 5xx get a structured one-liner so the operator can grep by
-      // request-id without reading the full body. 2xx stays quiet.
+      // 5xx are real bugs → error. 4xx are expected (auth expiring,
+      // permission denied, not-found probes, etc.) → warn so the error
+      // log isn't flooded with normal traffic. 2xx stays quiet.
       const status = c.res.status;
-      if (status >= 400) {
+      if (status >= 500) {
         log.error(
           {
             reqId: id,
@@ -143,7 +152,18 @@ export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
             status,
             durationMs: Date.now() - start,
           },
-          'mini app: request finished with error',
+          'mini app: request finished with 5xx',
+        );
+      } else if (status >= 400) {
+        log.warn(
+          {
+            reqId: id,
+            method: c.req.method,
+            path: c.req.path,
+            status,
+            durationMs: Date.now() - start,
+          },
+          'mini app: request finished with 4xx',
         );
       }
     }
