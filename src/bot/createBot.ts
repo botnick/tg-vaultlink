@@ -27,10 +27,16 @@ import { registerPermissionsRouter } from './routers/permissions.router.js';
 import { registerReportsRouter } from './routers/reports.router.js';
 import { registerAdminRouter } from './routers/admin.router.js';
 import { registerSettingsRouter } from './routers/settings.router.js';
+import { registerUidRouter } from './routers/uid.router.js';
 import { registerCancelRouter } from './routers/cancel.router.js';
 import { registerCollectionRouter } from './routers/collection.router.js';
 import { registerMainMenuRouter } from './routers/main_menu.router.js';
 import { registerBroadcastRouter } from './routers/broadcast.router.js';
+import { registerCreditsRouter } from './routers/credits.router.js';
+import { registerTopupRouter } from './routers/topup.router.js';
+import { registerAdminCreditsRouter } from './routers/admin_credits.router.js';
+import { registerCryptoTopupRouter } from './routers/crypto_topup.router.js';
+import { registerAdminCryptoRouter } from './routers/admin_crypto.router.js';
 import type { ChildBotManager } from './childBotManager.js';
 
 export interface CreateBotOptions {
@@ -114,6 +120,7 @@ export function createBot(opts: CreateBotOptions): Bot<AppContext> {
   registerStartRouter(composer);
   registerHelpRouter(composer);
   registerSettingsRouter(composer);
+  registerUidRouter(composer);
   registerUploadRouter(composer);
   registerFilesRouter(composer);
   registerBotManagementRouter(
@@ -127,6 +134,17 @@ export function createBot(opts: CreateBotOptions): Bot<AppContext> {
   registerCollectionRouter(composer);
   registerMainMenuRouter(composer);
   registerBroadcastRouter(composer);
+  // Wave 9 — credit system. The user-facing router and topup payment
+  // handlers run before decode (callbacks + payment events, no text
+  // contention); the admin router is registered alongside the other
+  // admin routers so super-admin / founder gates apply consistently.
+  registerCreditsRouter(composer);
+  registerTopupRouter(composer);
+  registerAdminCreditsRouter(composer);
+  // Wave 9.1 — crypto topup. Register BEFORE registerDecodeRouter so the
+  // "paste tx hash" text fallback runs ahead of share-code parsing.
+  registerCryptoTopupRouter(composer);
+  registerAdminCryptoRouter(composer);
   // Decode is last among text-handling routers so commands always win.
   registerDecodeRouter(composer);
   bot.use(composer);

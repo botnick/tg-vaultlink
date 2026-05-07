@@ -34,6 +34,7 @@ import { deliverItem } from './_delivery.js';
 import type { CollectionItemRow, CollectionRow } from '../../types/index.js';
 import { escapeHtml } from '../../utils/safeText.js';
 import { formatShareCode } from '../../utils/shareCodeFormat.js';
+import { chargeRedemptionForCallback } from './_credit_charge.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -306,19 +307,37 @@ export function registerCollectionRouter(composer: Composer<AppContext>): void {
       });
       return;
     }
+
+    // Wave 9 — charge for the bulk-send action (per-item surcharge applies
+    // when configured). The callback-flavored helper handles the user
+    // notification on insufficient credits AND answers the callback query.
+    const charge = await chargeRedemptionForCallback(ctx, {
+      kind: 'collection_send',
+      referenceType: 'collection',
+      referenceId: collection.id,
+      ownerUserId: collection.owner_user_id,
+      itemCount: remainingItems,
+    });
+    if (!charge) return;
+
     await ctx.answerCallbackQuery();
 
     let sent = 0;
-    for (let p = fromPage; p <= pages; p++) {
-      const slice = ctx.services.share.renderCollectionPage({
-        collection,
-        page: p,
-        locale: ctx.locale,
-      });
-      sent += await deliverItemsBatch(ctx, slice.items);
-      if (p < pages) {
-        await sleep(ctx.config.COLLECTION_SEND_DELAY_MS);
+    try {
+      for (let p = fromPage; p <= pages; p++) {
+        const slice = ctx.services.share.renderCollectionPage({
+          collection,
+          page: p,
+          locale: ctx.locale,
+        });
+        sent += await deliverItemsBatch(ctx, slice.items);
+        if (p < pages) {
+          await sleep(ctx.config.COLLECTION_SEND_DELAY_MS);
+        }
       }
+    } catch (err) {
+      ctx.services.credits.refund(charge, String(err));
+      throw err;
     }
     ctx.services.share.recordCollectionAccess(collection, ctx.user);
     await ctx.reply(ctx.t('collection.send_all.completed', { count: sent }));

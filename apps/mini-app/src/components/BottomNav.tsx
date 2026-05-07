@@ -13,7 +13,10 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../providers/AuthProvider.js';
 import { useT } from '../lib/i18n.js';
 import { hapticImpact } from '../lib/telegram.js';
-import { AdminIcon, BotsIcon, FilesIcon, SettingsIcon } from './icons.js';
+import { AdminIcon, BotsIcon, CreditsIcon, FilesIcon, SettingsIcon } from './icons.js';
+import { useQuery } from '@tanstack/react-query';
+import { qk } from '../lib/queryKeys.js';
+import { creditsApi } from '../lib/credits.api.js';
 
 interface TabDef {
   to: string;
@@ -25,11 +28,25 @@ export function BottomNav(): JSX.Element {
   const t = useT();
   const { isAdmin } = useAuth();
 
+  // Show the Credits tab only when the system is enabled. Reuses the
+  // already-cached `summary` query so this is free unless the user is
+  // somewhere that doesn't load it.
+  const summaryQuery = useQuery({
+    queryKey: qk.credits.summary,
+    queryFn: () => creditsApi.summary(),
+    staleTime: 30_000,
+    retry: 0,
+  });
+  const creditsEnabled = summaryQuery.data?.enabled ?? false;
+
   const tabs: TabDef[] = [
     { to: '/files', labelKey: 'nav.files', Icon: FilesIcon },
     { to: '/bots', labelKey: 'nav.bots', Icon: BotsIcon },
-    { to: '/settings', labelKey: 'nav.settings', Icon: SettingsIcon },
   ];
+  if (creditsEnabled) {
+    tabs.push({ to: '/credits', labelKey: 'nav.credits', Icon: CreditsIcon });
+  }
+  tabs.push({ to: '/settings', labelKey: 'nav.settings', Icon: SettingsIcon });
   if (isAdmin) tabs.push({ to: '/admin', labelKey: 'nav.admin', Icon: AdminIcon });
 
   return (

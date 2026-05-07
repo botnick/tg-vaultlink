@@ -38,6 +38,9 @@ export const RATE_LIMIT_WINDOWS = {
   download: 60 * 60 * 1000,
   add_bot: 24 * 60 * 60 * 1000,
   report: 60 * 60 * 1000,
+  // Wave 9.3 — crypto invoice creation. 1-minute window so a misbehaving
+  // client gets unblocked quickly while still preventing enumeration.
+  crypto_invoice: 60 * 1000,
 } as const;
 
 /** AES-256-GCM parameters for encrypting child-bot tokens at rest. */
@@ -51,6 +54,30 @@ export const PASSWORD_MAX_LENGTH = 128;
 
 /** Bound for free-form report reasons stored on the `reports` row. */
 export const REPORT_REASON_MAX_LENGTH = 500;
+
+/**
+ * Allowed values for `reports.reason_category`. The DB column has no CHECK
+ * constraint (see migration 010) so the application layer is the single
+ * source of truth for the enum: any value submitted from the bot or Mini App
+ * is normalized through this list, falling back to `'other'`.
+ */
+export const REPORT_REASON_CATEGORIES = [
+  'spam',
+  'illegal',
+  'copyright',
+  'malware',
+  'scam',
+  'other',
+] as const;
+export type ReportReasonCategory = (typeof REPORT_REASON_CATEGORIES)[number];
+
+export function normalizeReportReasonCategory(input: unknown): ReportReasonCategory {
+  if (typeof input !== 'string') return 'other';
+  const lowered = input.trim().toLowerCase();
+  return (REPORT_REASON_CATEGORIES as readonly string[]).includes(lowered)
+    ? (lowered as ReportReasonCategory)
+    : 'other';
+}
 
 /** Telegram-imposed caption ceiling. */
 export const CAPTION_MAX_LENGTH = 1024;

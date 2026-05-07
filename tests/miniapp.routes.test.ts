@@ -21,6 +21,8 @@ import { SettingsService } from '../src/services/settings.service.js';
 import { UserService } from '../src/services/user.service.js';
 import { ShareService } from '../src/services/share.service.js';
 import { BroadcastService } from '../src/services/broadcast.service.js';
+import { CreditService } from '../src/services/credit.service.js';
+import { CryptoTopupService } from '../src/services/crypto/cryptoTopup.service.js';
 
 import { createMiniAppServer } from '../src/miniapp/server.js';
 import type { MiniAppServer } from '../src/miniapp/server.js';
@@ -103,7 +105,13 @@ function wire(): Wired {
   );
   const rateLimit = new RateLimitService(env.repos.rateLimit, env.config);
   const settings = new SettingsService(env.repos.settings);
-  const report = new ReportService(env.repos.reports, env.repos.files, audit, env.config);
+  const report = new ReportService(
+    env.repos.reports,
+    env.repos.files,
+    env.repos.collections,
+    audit,
+    env.config,
+  );
   const share = new ShareService({
     files: env.repos.files,
     bots: env.repos.bots,
@@ -121,6 +129,36 @@ function wire(): Wired {
     env.config,
   );
 
+  const credits = new CreditService({
+    credits: env.repos.credits,
+    users: env.repos.users,
+    settings,
+    audit,
+    config: env.config,
+  });
+  const crypto = new CryptoTopupService({
+    invoices: env.repos.cryptoInvoices,
+    settings,
+    audit,
+    credits,
+    config: env.config,
+    adapters: new Map(),
+  });
+
+  // Wave 9.2 — payments service is constructed in production AFTER the
+  // main bot is bootstrapped (it needs the live `bot.api`). The Mini App
+  // route tests don't exercise the createInvoiceLink / refundStarPayment
+  // paths so we use a stub that throws — any unexpected call surfaces
+  // immediately instead of silently passing.
+  const paymentsStub = {
+    createStarsInvoiceLink: () => {
+      throw new Error('payments stubbed in tests');
+    },
+    refundStarPayment: () => {
+      throw new Error('payments stubbed in tests');
+    },
+  } as unknown as AppServices['payments'];
+
   const services: AppServices = {
     file: fileSvc,
     bot: botSvc,
@@ -132,6 +170,9 @@ function wire(): Wired {
     audit,
     share,
     broadcast,
+    credits,
+    crypto,
+    payments: paymentsStub,
   };
 
   const repos: AppRepos = {
@@ -146,6 +187,8 @@ function wire(): Wired {
     collections: env.repos.collections,
     collectionDrafts: env.repos.collectionDrafts,
     broadcasts: env.repos.broadcasts,
+    credits: env.repos.credits,
+    cryptoInvoices: env.repos.cryptoInvoices,
   };
 
   const server = createMiniAppServer({ config: env.config, services, repos });

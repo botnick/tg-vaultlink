@@ -23,7 +23,8 @@ import { SkeletonCard } from '../components/SkeletonCard.js';
 import { StatusBadge } from '../components/StatusBadge.js';
 import { CopyButton } from '../components/CopyButton.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
-import { LockIcon, TrashIcon, UnlockIcon, fileTypeIcon } from '../components/icons.js';
+import { ReportSheet } from '../components/ReportSheet.js';
+import { FlagIcon, LockIcon, TrashIcon, UnlockIcon, fileTypeIcon } from '../components/icons.js';
 import { apiDelete, apiGet, apiPost } from '../lib/api.js';
 import { qk } from '../lib/queryKeys.js';
 import { useT, useLocale } from '../lib/i18n.js';
@@ -48,6 +49,7 @@ export function FileDetailPage(): JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [dialog, setDialog] = useState<DialogKind>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const query = useQuery({
@@ -215,10 +217,26 @@ export function FileDetailPage(): JSX.Element {
               >
                 {t('file_detail.delete')}
               </Button>
+              <Button
+                variant="ghost"
+                block
+                leftIcon={<FlagIcon size={18} />}
+                onClick={() => setReportOpen(true)}
+              >
+                {t('file_detail.report')}
+              </Button>
             </div>
           </Card>
         </div>
       )}
+
+      {file ? (
+        <ReportSheet
+          open={reportOpen}
+          target={{ type: 'file', id: file.id, label: file.file_name ?? file.share_code }}
+          onClose={() => setReportOpen(false)}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={dialog === 'delete'}

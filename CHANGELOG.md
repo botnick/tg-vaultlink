@@ -7,6 +7,323 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Wave 9.3 — full-auto crypto payment gateway (USDT/USDC × TRX/BSC/ETH/TON).**
+  Multi-chain matrix on a single registry (`src/services/crypto/chain.registry.ts`) —
+  add or remove a chain by editing one file; adapter wiring, picker UX,
+  service defaults, and audit metadata all iterate over the registry.
+  Eight new chain ids ship: `tron-usdt`, `tron-usdc`, `bsc-usdt`, `bsc-usdc`,
+  `eth-usdt`, `eth-usdc`, `ton-usdt-jetton`, `ton-usdc-jetton` (plus legacy
+  `ton-native`, hidden from the picker but still verifies in-flight invoices).
+  - **Full auto-detect**: invoice issuance returns an exact amount with a
+    unique decimal suffix (e.g. `10.000072 USDT`). The user transfers that
+    exact amount to the receiving address; the worker scans incoming
+    transfers, matches by amount + token contract + recipient address, and
+    credits automatically. No tx-hash submission needed for the happy path.
+  - **EVM adapter** (`src/services/crypto/evm.adapter.ts`): generic ERC-20
+    watcher for BSC/ETH over JSON-RPC. Anchors every match to the canonical
+    token contract (`evm.contracts.ts`), filters at `eth_getLogs` source,
+    re-checks per-log address case-insensitively, halves on
+    `result limit exceeded` (-32005). Pure fetch-based — no external lib.
+  - **TRON / TON adapters refactored** to parameterized contracts/jetton
+    masters; static factories `usdt()` / `usdc()` produce the canonical
+    instances. Legacy `TronUsdtAdapter` + `TonUsdtJettonAdapter` stay as
+    thin subclasses for backwards compat.
+  - **Unique-amount allocator** with crypto-grade RNG and partial UNIQUE
+    index `(chain, amount_unit) WHERE active`. Five retries on collision,
+    last-resort falls back to user-requested amount + DB UNIQUE backstop.
+  - **Cancel-and-retry**: users can cancel their own pending invoice
+    (`POST /api/v1/crypto/invoices/:id/cancel`), freeing a slot under the
+    per-user concurrent cap (default 3). Server refuses cancellation once
+    a payment is attached so attribution can never be lost.
+  - **Abuse defenses**: per-user `crypto_invoice` rate limit (default
+    5/min via the existing `RateLimitService`), concurrent active-invoice
+    cap (`CRYPTO_MAX_ACTIVE_INVOICES_PER_USER=3`), worker dust filter
+    (`CRYPTO_DUST_THRESHOLD_USD`).
+  - **Confirmation tier** tuned per chain finality: TRX=1, TON=1, BSC=15,
+    ETH=12 (industry standard for stablecoin retail).
+  - **Mini App redesign**: 4-stage flow (network → token → amount →
+    waiting-for-payment), Telegram-native QR card with brand-aware
+    gradient ring + token chip + soft pulse, tap-to-copy exact amount,
+    cancel button, and an "Already paid" disclosure that reveals manual
+    tx-hash entry as the escape hatch.
+  - **Bot redesign**: 2-stage inline picker (network → token), auto-detect
+    status banner, cancel button, advanced "Need help?" disclosure, plus
+    a `📱 Open in Mini App` button on every invoice that deep-links the
+    Mini App to the matching `?invoice=<id>` waiting-for-payment screen.
+  - **Money-safety regression suite** (`tests/cryptoTopup.workerSafety.test.ts`):
+    pins the load-bearing guards so refactors can't silently regress —
+    legacy invoices (no `unique_suffix` flag, no memo) cannot be
+    auto-attributed, EXACT amount match required for memo-less invoices,
+    and concurrent same-amount races resolve to the right invoice.
+  - **Worker re-verification on every poll**: `refreshTxConfirmations`
+    now re-checks the on-chain transfer's recipient + amount against the
+    invoice on every poll. A drift (e.g. legacy mis-attribution) parks
+    the invoice in `failed` with `attribution_mismatch_*` rather than
+    eventually crediting the wrong user when confirmations cross the
+    threshold. Belt-and-suspenders alongside the unique-suffix allocator.
+  - **Status flip discipline**: `updateConfirmations` SQL only flips
+    `submitted` → `confirming`. Pre-fix it dragged `pending` → `confirming`
+    on every poll, which surfaced "Payment detected" in the UI even when
+    no transfer had been seen.
+  - **Wallet-grade QR rendering**: rounded "blob" modules with
+    selective per-corner radii (adjacent modules merge into a single
+    fluid shape), three rounded finder patterns, brand-coloured matrix
+    per network, and a circular brand-gradient logo with inset highlight.
+  - **Real-logo icons** via `@web3icons/react` for every chain + token
+    (TRON wedge, BNB diamond cross, Ethereum stacked rhombus, TON Diamond,
+    Tether striped T, Circle USDC).
+  - **Live mm:ss countdown** on the InvoicePanel hero card and per-row in
+    the Open-invoices list. Turns red under 5 minutes; auto-stops ticking
+    on expiry.
+  - **Locales**: full Thai + English coverage for every new key.
+  - Migration: extends `crypto_invoices` schema with the new partial
+    UNIQUE index `idx_crypto_invoices_active_amount`.
+
+- **`/uid` command** — paste-friendly Telegram user id lookup so support
+  flows ("send your uid to admin") and `ADMIN_IDS` bootstrap don't have
+  to chase down the value through external bots.
+
+- **Wave 9.2 — QR top-up + in-app Stars + admin dashboard + Stars refund defense.**
+  - **Crypto top-up QR** in the Mini App. Backend now generates a frozen
+    BIP-21 / `ton://transfer/...` URI per invoice (validated against a
+    per-chain allowlist regex to defeat URI-injection); frontend renders
+    it with the new `<PaymentQR>` component using `qrcode` (~20 KB).
+    TRC-20 has no standard URI scheme — Mini App falls back to a
+    bare-address QR with amount/memo as text. Every QR includes a
+    "What does this encode?" disclosure so paranoid users can verify
+    before scanning. Migration `006_crypto_payment_uri.sql` adds the
+    `crypto_invoices.payment_uri` column.
+  - **Stars top-up opens inline.** Mini App now POSTs
+    `/api/v1/credits/stars/invoice`, gets back an invoice link from
+    `bot.api.createInvoiceLink`, and hands it to
+    `Telegram.WebApp.openInvoice()`. Reuses the same
+    `credits:<stars>:<credits>:<userId>` payload + `pre_checkout_query`
+    validator the chat-side flow uses, so a tampered invoice link
+    cannot grant credits. Per-user rate limit
+    (`MINI_APP_STARS_INVOICE_RATELIMIT_PER_MIN`, default 5) protects
+    the bot's global API quota. Migration `007_topup_dedupe_index.sql`
+    adds a partial UNIQUE index on `(reason='topup', reference_id)`
+    so duplicate Telegram delivery can't double-credit at the DB layer.
+  - **Admin dashboard expansion.** `/admin/stats` now also reports
+    banned users, super admins, spend-locked users, and pending
+    crypto invoices. New endpoints: `/admin/stats/credits` (aggregates
+    by ledger reason, lifetime + 24h + 7d), `/admin/stats/payments`
+    (Stars funnel + 7-day timeseries), `/admin/stats/crypto` (counts
+    grouped by chain/status), `/admin/stats/recent` (last 50 audit
+    rows enriched with actor profile). Mini App dashboard renders a
+    Revenue card (with inline-SVG sparkline — no charts library), a
+    Health card, and a Recent activity card.
+  - **Stars refund defense.** Bot now listens for
+    `message:refunded_payment` (Bot API 7.4+). A four-layer response:
+    1. **Clawback** — original `topup` ledger row is reversed
+       atomically via the new `applyDeltaUnchecked()`; cached balance
+       can go negative so further spending auto-blocks via the
+       existing overdraft check.
+    2. **Time lock** — `users.spend_locked_until` set to
+       `now + stars × STARS_REFUND_LOCK_SECONDS_PER_STAR` (default
+       3600 s/Star, capped at `STARS_REFUND_LOCK_MAX_SECONDS`).
+       Subsequent refunds extend, never shorten, the lock.
+       `CreditService.assertSpendable()` short-circuits every paid
+       action with `SPEND_LOCKED` while the lock is active.
+    3. **Repeat-offender hard ban** — `STARS_REFUND_HARD_BAN_THRESHOLD`
+       refund events inside `STARS_REFUND_HARD_BAN_WINDOW_DAYS` flips
+       `is_banned`. Defaults: 3 refunds in 30 days = permanent ban.
+    4. **Admin override** — founder-only Mini App endpoints
+       `POST /admin/credits/refund` (kicks
+       `bot.api.refundStarPayment`; the actual ledger reversal lands
+       when Telegram echoes the refund event back) and
+       `POST /admin/credits/clear-lock` (with optional `write_off`
+       that grants an `admin_writeoff` ledger entry to forgive the
+       deficit for legitimate disputes).
+    Migration `008_stars_refunds.sql` adds `users.spend_locked_until`,
+    `refund_count`, and `total_refunded_stars`. Refund audit log
+    actions: `credits.stars_refund_received`,
+    `credits.stars_refund_admin`, `credits.spend_lock_cleared`.
+  - **New `PaymentsService`** wraps the bot's `bot.api` for the
+    Mini-App side, exposing `createStarsInvoiceLink` and
+    `refundStarPayment`. Constructed after `bootstrapMainBot` so it
+    sees the live API client.
+
+### Added
+
+- **Dynamic credit system (Wave 9).** Every redemption can be metered with
+  a per-user balance, every knob is admin-toggleable at runtime, and
+  `ENABLE_CREDITS=false` (the default) keeps the bot fully open as before.
+  - **Free starter credits** on first interaction (`CREDITS_SIGNUP_BONUS`,
+    default 10) — granted exactly once per user, idempotent via the new
+    `users.credits_initialized` flag.
+  - **Earn-by-sharing** referral rewards: every time someone else opens a
+    code you created, you get `CREDITS_REFERRAL_REWARD` credits (default
+    1). Rate-limited by `CREDITS_REFERRAL_DAILY_CAP` per UTC day to defeat
+    abuse; cap=0 means unlimited. Notifications are silent — earnings show
+    up in `/settings → 💳 Credits → 📜 History` only.
+  - **Insufficient-credits wall** — `INSUFFICIENT_CREDITS` error wraps every
+    redemption path (`/start <code>`, decode router, collection
+    `coll:send_remaining`) with a friendly localized reply offering top up
+    and "share your codes to earn" buttons (each gated on the matching
+    feature flag).
+  - **Telegram Stars top-up**, off by default. Admin-edits the package
+    list via `/admin_credit_packages_set`; defaults are
+    `[{stars:10,credits:100},{stars:50,credits:600},{stars:100,credits:1500}]`
+    (1 ⭐ = 10 credits with volume bonuses). End-to-end flow:
+    `credit:topup:pkg:N` → `sendInvoice(currency='XTR')` →
+    `pre_checkout_query` validation → `successful_payment` → ledger
+    `topup` row.
+  - **Admin panel** at `/admin_credits` (super admin opens, founder edits):
+    one-tap toggles for system / topup / referral / owner-bypass /
+    admin-bypass. Numeric edits + user balance flows via founder-only
+    commands (`/admin_credit_set <key> <value>`, `/admin_credit_grant`,
+    `/admin_credit_revoke`, `/admin_credit_setbal`).
+  - **Five tiers of cost flexibility** without redeploy: master off,
+    flat-rate, differentiated by action, differentiated by file type
+    (`credits.cost_decode.video=3`), per-item bulk surcharge
+    (`credits.cost_collection_per_item=1`).
+  - **Atomic ledger.** `users.credits` is the cached balance;
+    `credit_transactions` is the immutable source of truth for refunds,
+    audits, and the history view. Every state change goes through
+    `CreditRepository.applyDelta()` inside `db.transaction()`, so a debit
+    + ledger row land in a single writer-lock pass and a partial write
+    is impossible. Combined with the existing per-user `sequentialize()`,
+    concurrent redemptions for the same user are race-free.
+  - **Charge / refund pattern** in routers: charge BEFORE delivery, refund
+    on Telegram throw — losing a credit to a transient send error is
+    impossible.
+  - **i18n locked in lockstep** for `en` and `th`. **Migration 004** is
+    additive (`ALTER TABLE users ADD COLUMN`) so existing databases
+    upgrade with `pnpm db:migrate` and downgrade by re-running with the
+    feature off.
+
+- **Self-custodial crypto top-up (Wave 9.1).** Layers on top of the credit
+  system as a third payment rail next to Stars + admin grants — without a
+  payment gateway, without holding private keys, and without trusting
+  user-supplied tx hashes. **Off by default** via `ENABLE_CRYPTO_TOPUP=false`
+  so existing deploys are unchanged.
+  - **Three chains shipped**: USDT-TRC20 (TRON), TON native, USDT-TON
+    jetton. Each adapter is a watch-only HTTP client against a public RPC
+    (trongrid for TRON, toncenter for TON) — no wallet libraries, no
+    signing, no key material on disk.
+  - **Security model.** Operator configures a RECEIVING address per chain;
+    the bot only ever reads from it. Each invoice gets a unique memo
+    (on chains that support it) plus a per-row `UNIQUE(chain, tx_hash)`
+    constraint, so the same on-chain transaction can never credit two
+    invoices even under a worker race. tx-hash submissions are verified
+    against the chain's tx receipt for: status=success, recipient match,
+    amount >= invoice amount (with optional bps tolerance), required
+    confirmations met. A reverted tx flips the invoice to `failed`
+    permanently. RPC failures bubble up as `CRYPTO_RPC_ERROR` — no silent
+    "credited anyway" paths exist.
+  - **User flow.** `/settings → 💳 Credits → 💎 Top up → 🪙 Pay with
+    crypto`. User picks chain → amount preset → bot replies with the
+    pay-to address, exact amount, memo, expiry, and a "📋 paste tx hash"
+    button. After paying, user sends just the hex tx hash; the service
+    verifies on-chain and either applies credits immediately (if
+    confirmations meet threshold) or waits for the auto-poller to push
+    them across the line.
+  - **Auto-poller worker.** Runs every `CRYPTO_POLL_INTERVAL_SECONDS`
+    (default 30). Re-checks pending invoices and discovers payments the
+    user hasn't pasted yet by listing recent transfers on the receiving
+    address and matching by memo + amount. Idle and zero-cost when the
+    master switch is off.
+  - **Admin panel.** `/admin_crypto` opens an inline panel with master +
+    per-chain toggles; numeric tunables (confirmations, rate, tolerance,
+    min/max amounts) all editable via `/admin_credit_set
+    credits.crypto.<key> <value>`. Receiving address and API key go
+    through dedicated commands (`/admin_crypto_address`,
+    `/admin_crypto_apikey`) that audit-log the change.
+  - **Migration 005** adds the `crypto_invoices` table with the
+    `UNIQUE(chain, tx_hash)` partial index. Additive against an existing
+    Wave 9 database — `pnpm db:migrate` upgrades in place.
+  - **Tests.** 31 new tests covering decimal helpers, address validation,
+    TRON tx-receipt log decoding, idempotency under hash reuse,
+    address/amount/state mismatch rejection, and confirmation-threshold
+    behaviour. 257 total passing.
+
+- **Admin rescue path + Mini App for credits/crypto (Wave 9.2).** The
+  previous waves shipped the bot-side flows; this wave closes the loop
+  with a Mini App and a complete admin override surface.
+  - **Service-level admin overrides** for stuck payments:
+    `recheckInvoice` (re-poll + apply if confirmations cleared),
+    `forceApplyInvoice` (apply credits regardless of conf threshold,
+    founder-only — for "verified manually on the explorer" cases),
+    `adminAttachHash` (attach a tx hash to ANY status — including
+    `expired`/`failed` — and verify on-chain), and
+    `extendInvoice` (push expires_at forward and revive an expired
+    row). Bot commands: `/admin_crypto_invoice_recheck|force|attach|extend`.
+  - **Comprehensive audit log.** Every state transition is logged with
+    a structured payload: `crypto.invoice_created`,
+    `crypto.invoice_submit_attempt` (every paste, success or fail, with
+    the on-chain verification snapshot), `crypto.invoice_submit_rejected`
+    (with reason: `address_mismatch` / `amount_mismatch` / etc.),
+    `crypto.invoice_recheck`, `crypto.invoice_applied`,
+    `crypto.invoice_failed`, `crypto.invoice_expired`,
+    `crypto.invoice_auto_discovered` (worker-found payments),
+    `crypto.invoice_force_apply_requested`, `crypto.invoice_admin_attach`,
+    `crypto.invoice_extended`, `crypto.address_changed`,
+    `crypto.apikey_changed`, `crypto.memo_mismatch`. Operators can
+    reconstruct the full lifecycle of any invoice from the audit log
+    alone.
+  - **User-side recheck.** The bot's "🔄 Re-check" button on an
+    invoice now calls `recheckInvoice` (was a cached re-render).
+    A full Mini App polling loop also auto-refetches every 15s while
+    the invoice is in flight.
+  - **Mini App pages.**
+    - `/credits` — balance card, lifetime aggregates, top-up CTAs
+      (Stars + Crypto, surfaced only when each is enabled), referral
+      hint, paginated history.
+    - `/credits/crypto` — full chain → amount → invoice → paste-hash
+      flow with copy buttons, expiry countdown, automatic conf-count
+      polling.
+    - `/admin/credits` — every dynamic toggle and number editable
+      live (including per-file-type overrides), grant/revoke per user,
+      gated to founder for mutations.
+    - `/admin/crypto` — chain config (address / conf / rate / api key
+      rotate) + invoice queue with per-row recheck / attach / force /
+      extend buttons.
+  - **Mini App API surface.** New routes under `/api/v1/credits`,
+    `/api/v1/crypto`, and `/api/v1/admin/{credits,crypto}`. Standard
+    Hono envelope + initData auth, founder gate enforced server-side.
+  - **Tests.** 13 more covering admin recheck / force / attach /
+    extend, plus audit-log-completeness assertions. 270 total passing.
+
+- **Anti-farming defense for referrals (Wave 9.3).** Closes the obvious
+  collusion attack: A creates N codes, B opens all of them, A pockets
+  N referral credits. Industry-standard defense-in-depth via four
+  independent layers, all dynamic toggles:
+  - **Per-pair lifetime cap** (`credits.referral_pair_lifetime_cap`,
+    default 5). A single (creator, redeemer) pair can generate at most
+    this many referral rewards EVER, regardless of how many of the
+    creator's codes the redeemer opens. Dropbox-style "you can only refer
+    a friend once" with a small buffer for legitimate friend pairs.
+  - **Per-pair velocity window**
+    (`credits.referral_pair_window_minutes` × `pair_window_max`,
+    default 2 in 15min). Burst defense — even before lifetime exhausts,
+    the same pair can't fire more than N rewards in M minutes. Set
+    minutes=0 to disable.
+  - **Redeemer quarantine**
+    (`credits.referral_redeemer_min_age_minutes`, default 30). Brand-new
+    accounts can't unlock referral rewards for anyone until they've
+    aged past the threshold. Defeats throwaway-alt farms.
+  - **Per-creator daily cap** (existing
+    `credits.referral_daily_cap`, default 200/UTC-day). Outermost
+    backstop.
+  - **Silent skip + structured audit.** Code-opening still works
+    normally; only the reward fires-or-skips quietly. Each skip writes
+    a typed audit row — `credits.referral_pair_capped`,
+    `credits.referral_velocity_blocked`,
+    `credits.referral_redeemer_too_new`, `credits.referral_capped` — so
+    `/admin_credit_referral_stats <creator_tg> <redeemer_tg>` and the
+    audit log surface attack patterns immediately.
+  - **Implementation note.** Pair counting uses SQLite JSON1
+    (`json_extract(metadata_json, '$.redeemerUserId')`) over the
+    existing `credit_transactions` ledger — no schema change needed,
+    `pnpm db:migrate` is a no-op for this wave.
+  - **Tests.** 8 more covering each layer in isolation, the layered
+    ordering, the canonical "100 codes opened by one B" attack
+    (verified: only first 5 reward A under default settings), and the
+    `referralPairStats` admin helper. 278 total passing.
+
 ## [0.3.3] - 2026-05-05
 
 ### Fixed

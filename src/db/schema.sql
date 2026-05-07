@@ -20,10 +20,22 @@ CREATE TABLE IF NOT EXISTS users (
   locale TEXT,
   role TEXT NOT NULL DEFAULT 'user',
   is_banned INTEGER NOT NULL DEFAULT 0,
+  broadcast_unsubscribed INTEGER NOT NULL DEFAULT 0,
+  credits INTEGER NOT NULL DEFAULT 0,
+  credits_initialized INTEGER NOT NULL DEFAULT 0,
+  -- Wave 9.2 — Stars refund defense. spend_locked_until is an ISO timestamp;
+  -- when in the future, every credit spend short-circuits with SPEND_LOCKED.
+  -- refund_count + total_refunded_stars feed the repeat-offender threshold.
+  spend_locked_until TEXT,
+  refund_count INTEGER NOT NULL DEFAULT 0,
+  total_refunded_stars INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_users_telegram_user_id ON users(telegram_user_id);
+CREATE INDEX IF NOT EXISTS idx_users_spend_locked
+  ON users(spend_locked_until)
+  WHERE spend_locked_until IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS managed_bots (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,19 +109,29 @@ CREATE TABLE IF NOT EXISTS bot_permissions (
 );
 CREATE INDEX IF NOT EXISTS idx_bot_permissions_bot_user ON bot_permissions(bot_id, user_id);
 
+-- Polymorphic: target_type ∈ {'file','collection'} with target_id pointing
+-- into the matching table. No FK on target_id — the discriminator picks
+-- which table to join at query time.
 CREATE TABLE IF NOT EXISTS reports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  file_id INTEGER,
+  target_type TEXT NOT NULL,
+  target_id INTEGER NOT NULL,
   reporter_user_id INTEGER,
   reason TEXT NOT NULL,
+  -- Enum discriminator: spam | illegal | copyright | malware | scam | other.
+  -- Validated at the application layer (see `REPORT_REASON_CATEGORIES` in
+  -- src/config/constants.ts) so the set can grow without a table rebuild.
+  reason_category TEXT NOT NULL DEFAULT 'other',
   status TEXT NOT NULL DEFAULT 'pending',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  FOREIGN KEY (file_id) REFERENCES files(id),
   FOREIGN KEY (reporter_user_id) REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
-CREATE INDEX IF NOT EXISTS idx_reports_file ON reports(file_id);
+CREATE INDEX IF NOT EXISTS idx_reports_target_status
+  ON reports(target_type, target_id, status);
+CREATE INDEX IF NOT EXISTS idx_reports_reporter
+  ON reports(reporter_user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS rate_limits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -213,3 +235,86 @@ CREATE TABLE IF NOT EXISTS collection_draft_items (
   FOREIGN KEY (draft_id) REFERENCES collection_drafts(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_collection_draft_items_draft ON collection_draft_items(draft_id);
+
+-- Wave 9: dynamic credit system.
+-- Per-user balance lives on `users.credits`; the immutable ledger below is
+-- the source of truth (history view, refund correctness, audit). Every
+-- balance write goes through CreditRepository.applyDelta() which writes
+-- one row here and bumps users.credits in the same transaction.
+CREATE TABLE IF NOT EXISTS credit_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  delta INTEGER NOT NULL,             -- signed: +grant/refund, -spend
+  reason TEXT NOT NULL,               -- enum, see CreditService
+  balance_after INTEGER NOT NULL,
+  reference_type TEXT,
+  reference_id TEXT,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_credit_tx_user ON credit_transactions(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_credit_tx_reason ON credit_transactions(reason, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_credit_tx_user_reason
+  ON credit_transactions(user_id, reason, created_at DESC);
+-- Wave 9.2 — hard idempotency for Stars top-ups. A given
+-- telegram_payment_charge_id can never produce two 'topup' rows.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_tx_topup_charge
+  ON credit_transactions(reference_id)
+  WHERE reason = 'topup' AND reference_id IS NOT NULL;
+
+-- Wave 9.1: self-custodial crypto top-up.
+-- One row per top-up attempt. The (chain, tx_hash) UNIQUE constraint is
+-- the load-bearing dedup that prevents double-crediting the same payment.
+-- Settings configure receiving address, confirmation threshold, and
+-- enable/disable per chain at runtime.
+CREATE TABLE IF NOT EXISTS crypto_invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  chain TEXT NOT NULL,                 -- 'tron-usdt' | 'ton-native' | 'ton-usdt-jetton'
+  status TEXT NOT NULL DEFAULT 'pending',
+  amount_unit TEXT NOT NULL,
+  amount_decimals INTEGER NOT NULL,
+  amount_label TEXT NOT NULL,
+  credits_to_grant INTEGER NOT NULL,
+  pay_to_address TEXT NOT NULL,
+  memo TEXT,
+  -- Wave 9.2 — frozen wallet-deeplink/QR-payable URI (BIP-21, ton://, etc.).
+  -- NULL for chains without a standard scheme; Mini App falls back to
+  -- bare-address QR + amount as text in that case.
+  payment_uri TEXT,
+  tx_hash TEXT,
+  from_address TEXT,
+  confirmations INTEGER NOT NULL DEFAULT 0,
+  required_confirmations INTEGER NOT NULL,
+  paid_at TEXT,
+  applied_at TEXT,
+  ledger_tx_id INTEGER,
+  expires_at TEXT NOT NULL,
+  last_polled_at TEXT,
+  poll_count INTEGER NOT NULL DEFAULT 0,
+  failure_reason TEXT,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (ledger_tx_id) REFERENCES credit_transactions(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crypto_invoices_chain_tx
+  ON crypto_invoices(chain, tx_hash) WHERE tx_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_crypto_invoices_user ON crypto_invoices(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crypto_invoices_status ON crypto_invoices(status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_crypto_invoices_memo ON crypto_invoices(memo) WHERE memo IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_crypto_invoices_pending_poll
+  ON crypto_invoices(status, last_polled_at)
+  WHERE status IN ('pending', 'submitted', 'confirming');
+
+-- Wave 9.3 — full-auto top-up. Memo-less chains (TRC-20 USDT/USDC, BEP-20,
+-- ERC-20) attribute payments via a unique decimal-suffix amount per active
+-- invoice (e.g. 10.000072 USDT). The service pre-checks for collision via
+-- findActiveByChainAndAmount + retries with a fresh suffix; this partial
+-- UNIQUE index is the load-bearing safety net under concurrent createInvoice
+-- so two pending invoices on the same chain can never share an amount.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crypto_invoices_active_amount
+  ON crypto_invoices(chain, amount_unit)
+  WHERE status IN ('pending', 'submitted', 'confirming');

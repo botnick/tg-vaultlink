@@ -22,7 +22,7 @@ import { founderOnlyMiddleware } from '../middlewares/founderOnly.middleware.js'
 import { escapeHtml } from '../../utils/safeText.js';
 import { formatSingleFileShareCode } from '../../utils/shareCodeFormat.js';
 import { AppError } from '../../utils/errors.js';
-import type { FileRow } from '../../types/index.js';
+import type { FileRow, ReportRow } from '../../types/index.js';
 
 /**
  * Render a file as the canonical `botname:CODE_<n><L>` form so admin replies
@@ -33,6 +33,23 @@ function shareCodeFor(ctx: AppContext, file: FileRow): string {
   const bot = ctx.repos.bots.findById(file.bot_id);
   if (!bot) return file.code;
   return formatSingleFileShareCode(bot.username, file.code, file.file_type);
+}
+
+/**
+ * Resolve a polymorphic report row to a human-pasteable share code. Files
+ * render as `botname:CODE_<n><L>`; collections render as `botname:CODE` with
+ * no media-count suffix (admins paste this back into the decoder, which
+ * accepts both forms). Returns "—" when the underlying row is missing.
+ */
+function reportTargetCode(ctx: AppContext, report: ReportRow): string {
+  if (report.target_type === 'file') {
+    const file = ctx.repos.files.findById(report.target_id);
+    return file ? shareCodeFor(ctx, file) : '—';
+  }
+  const collection = ctx.repos.collections.findById(report.target_id);
+  if (!collection) return '—';
+  const bot = ctx.repos.bots.findById(collection.bot_id);
+  return bot ? `${bot.username}:${collection.code}` : collection.code;
 }
 
 const NUMERIC_RE = /^\d+$/;
@@ -122,13 +139,21 @@ export function registerAdminRouter(composer: Composer<AppContext>): void {
     }
     const lines = [ctx.t('admin.reports.header')];
     for (const r of reports) {
-      const file = r.file_id !== null ? ctx.repos.files.findById(r.file_id) : undefined;
-      const codeDisplay = file ? shareCodeFor(ctx, file) : '—';
+      // Reporter @username (or bare id when the row is anonymized) so the
+      // bot view matches the Mini App's owner/reporter chips.
+      let reporterLabel = '—';
+      if (r.reporter_user_id !== null) {
+        const u = ctx.repos.users.findById(r.reporter_user_id);
+        reporterLabel = u?.username ? `@${u.username}` : (u?.first_name ?? `id:${r.reporter_user_id}`);
+      }
       lines.push(
         ctx.t('admin.reports.item', {
           id: r.id,
-          code: escapeHtml(codeDisplay),
+          kind: ctx.t(`admin.reports.kind.${r.target_type}`),
+          code: escapeHtml(reportTargetCode(ctx, r)),
           status: escapeHtml(r.status),
+          category: escapeHtml(r.reason_category),
+          reporter: escapeHtml(reporterLabel),
           reason: escapeHtml(r.reason),
         }),
       );
@@ -443,6 +468,15 @@ export async function handleAdminCommand(ctx: AppContext): Promise<void> {
   if (isFounder) {
     sections.push('');
     sections.push(ctx.t('admin.menu_founder'));
+  }
+
+  // Wave 9 — surface the credits admin entry to super admins so they know
+  // where to find the toggles. Behind isEnabled OR ENABLE_CREDITS env so
+  // the line appears even when the system is off (admin needs a path to
+  // turn it on).
+  if (isSuper) {
+    sections.push('');
+    sections.push(ctx.t('admin.menu_credits_hint'));
   }
 
   const opts: Parameters<typeof ctx.reply>[1] = { parse_mode: 'HTML' };

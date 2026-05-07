@@ -23,9 +23,16 @@ export class UserRepository {
   private readonly insertStmt;
   private readonly setBannedStmt;
   private readonly setBroadcastUnsubscribedStmt;
+  private readonly setCreditsInitializedStmt;
   private readonly countAllStmt;
   private readonly listStmt;
   private readonly listByRoleStmt;
+  private readonly setSpendLockUntilStmt;
+  private readonly clearSpendLockStmt;
+  private readonly bumpRefundCountersStmt;
+  private readonly countBannedStmt;
+  private readonly countByRoleStmt;
+  private readonly countSpendLockedStmt;
 
   constructor(private readonly db: Db) {
     this.findByTelegramIdStmt = db.prepare('SELECT * FROM users WHERE telegram_user_id = ?');
@@ -49,10 +56,45 @@ export class UserRepository {
          WHERE id = @id RETURNING *`,
     );
 
+    this.setCreditsInitializedStmt = db.prepare(
+      `UPDATE users SET credits_initialized = 1, updated_at = @now
+         WHERE id = @id RETURNING *`,
+    );
+
     this.countAllStmt = db.prepare('SELECT COUNT(*) AS n FROM users');
     this.listStmt = db.prepare('SELECT * FROM users ORDER BY id ASC LIMIT ? OFFSET ?');
     this.listByRoleStmt = db.prepare(
       'SELECT * FROM users WHERE role = ? ORDER BY id ASC LIMIT ? OFFSET ?',
+    );
+
+    // Wave 9.2 — Stars refund defense.
+    this.setSpendLockUntilStmt = db.prepare(
+      `UPDATE users SET spend_locked_until = @until, updated_at = @now
+         WHERE id = @id RETURNING *`,
+    );
+    this.clearSpendLockStmt = db.prepare(
+      `UPDATE users SET spend_locked_until = NULL, updated_at = @now
+         WHERE id = @id RETURNING *`,
+    );
+    this.bumpRefundCountersStmt = db.prepare(
+      `UPDATE users
+          SET refund_count = refund_count + 1,
+              total_refunded_stars = total_refunded_stars + @stars,
+              updated_at = @now
+        WHERE id = @id
+        RETURNING *`,
+    );
+
+    // Admin dashboard counters.
+    this.countBannedStmt = db.prepare(
+      `SELECT COUNT(*) AS n FROM users WHERE is_banned = 1`,
+    );
+    this.countByRoleStmt = db.prepare(
+      `SELECT COUNT(*) AS n FROM users WHERE role = ?`,
+    );
+    this.countSpendLockedStmt = db.prepare(
+      `SELECT COUNT(*) AS n FROM users
+         WHERE spend_locked_until IS NOT NULL AND spend_locked_until > ?`,
     );
   }
 
@@ -173,6 +215,26 @@ export class UserRepository {
     return row;
   }
 
+  /**
+   * Mark the user as having received the signup bonus. Idempotent — calling
+   * this twice is a no-op apart from updating `updated_at`. The credit
+   * grant itself is performed by `CreditRepository.applyDelta()` and runs
+   * BEFORE this flag flips so a crash between the two leaves the user
+   * eligible for a retry on next interaction (the alternative — flipping
+   * the flag first — could leave a user without their bonus and no way to
+   * trigger it again).
+   */
+  setCreditsInitialized(id: number): UserRow {
+    const row = this.setCreditsInitializedStmt.get({
+      id,
+      now: nowIso(),
+    }) as unknown as UserRow | undefined;
+    if (!row) {
+      throw new AppError(ErrorCode.USER_NOT_FOUND, `User ${id} not found`, { meta: { id } });
+    }
+    return row;
+  }
+
   setBanned(id: number, banned: boolean): UserRow {
     const row = this.setBannedStmt.get({
       id,
@@ -192,5 +254,56 @@ export class UserRepository {
 
   list(limit: number, offset: number): UserRow[] {
     return this.listStmt.all(limit, offset) as unknown as UserRow[];
+  }
+
+  /* ------------------------------------------------- Wave 9.2 helpers --- */
+
+  /**
+   * Set or extend the spend-lock end time. The handler always writes
+   * `max(existing, now + delta)` upstream so this raw setter just persists
+   * what the service decided. Pass `null` to clear (admin override).
+   */
+  setSpendLockedUntil(id: number, untilIso: string | null): UserRow {
+    const stmt = untilIso === null ? this.clearSpendLockStmt : this.setSpendLockUntilStmt;
+    const row = stmt.get({
+      id,
+      until: untilIso,
+      now: nowIso(),
+    }) as unknown as UserRow | undefined;
+    if (!row) {
+      throw new AppError(ErrorCode.USER_NOT_FOUND, `User ${id} not found`, { meta: { id } });
+    }
+    return row;
+  }
+
+  /** Increment refund_count + total_refunded_stars atomically. */
+  incrementRefundCounters(id: number, refundedStars: number): UserRow {
+    const row = this.bumpRefundCountersStmt.get({
+      id,
+      stars: Math.max(0, refundedStars | 0),
+      now: nowIso(),
+    }) as unknown as UserRow | undefined;
+    if (!row) {
+      throw new AppError(ErrorCode.USER_NOT_FOUND, `User ${id} not found`, { meta: { id } });
+    }
+    return row;
+  }
+
+  /** Total banned users (admin dashboard tile). */
+  countBanned(): number {
+    const row = this.countBannedStmt.get() as { n: number };
+    return row.n;
+  }
+
+  /** Total users in a given role. Used for the super_admin tile. */
+  countByRole(role: UserRole): number {
+    const row = this.countByRoleStmt.get(role) as { n: number };
+    return row.n;
+  }
+
+  /** Users whose spend-lock is currently active (in the future, vs. `nowIso`). */
+  countSpendLockedAt(nowIsoStr: string): number {
+    const row = this.countSpendLockedStmt.get(nowIsoStr) as { n: number };
+    return row.n;
   }
 }

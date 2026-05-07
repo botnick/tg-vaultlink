@@ -26,10 +26,15 @@ import { BotDetailPage } from './pages/BotDetail.js';
 import { MyCollections } from './pages/MyCollections.js';
 import { CollectionDetail as CollectionDetailPage } from './pages/CollectionDetail.js';
 import { Settings } from './pages/Settings.js';
+import { Credits } from './pages/Credits.js';
+import { CryptoTopup } from './pages/CryptoTopup.js';
+import { AdminCredits } from './pages/AdminCredits.js';
+import { AdminCrypto } from './pages/AdminCrypto.js';
 import { AdminDashboard } from './pages/AdminDashboard.js';
 import { AdminFiles } from './pages/AdminFiles.js';
 import { AdminUsers } from './pages/AdminUsers.js';
 import { Reports } from './pages/Reports.js';
+import { MyReports } from './pages/MyReports.js';
 import { AuditLogs } from './pages/AuditLogs.js';
 import { Broadcasts } from './pages/Broadcasts.js';
 import { BroadcastComposer } from './pages/BroadcastComposer.js';
@@ -109,6 +114,25 @@ function AppShell(): JSX.Element {
           <Route path="/collections" element={<MyCollections />} />
           <Route path="/collections/:id" element={<CollectionDetailPage />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/credits" element={<Credits />} />
+          <Route path="/credits/crypto" element={<CryptoTopup />} />
+          <Route path="/my-reports" element={<MyReports />} />
+          <Route
+            path="/admin/credits"
+            element={
+              <RequireAdmin>
+                <AdminCredits />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/crypto"
+            element={
+              <RequireAdmin>
+                <AdminCrypto />
+              </RequireAdmin>
+            }
+          />
           <Route
             path="/admin"
             element={

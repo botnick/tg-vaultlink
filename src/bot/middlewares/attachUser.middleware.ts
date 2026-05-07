@@ -41,13 +41,25 @@ export function attachUserMiddleware(deps: AttachUserDeps): MiddlewareFn<AppCont
       return;
     }
 
-    const user = userService.ensureUser({
+    let user = userService.ensureUser({
       telegram_user_id: String(from.id),
       username: from.username ?? null,
       first_name: from.first_name ?? null,
       last_name: from.last_name ?? null,
       language_code: from.language_code ?? null,
     });
+
+    // Wave 9 — issue the signup bonus on the first interaction once the
+    // credit system is enabled. The service short-circuits when the flag
+    // is already set, when the system is off, or when the bonus is zero,
+    // so this stays cheap on the hot path.
+    try {
+      user = services.credits.ensureSignupBonus(user);
+    } catch {
+      // Best-effort: if the bonus grant fails (DB hiccup, etc.) we let
+      // the user through without a bonus — the next interaction will
+      // retry because the `credits_initialized` flag stays unset.
+    }
 
     // Banned users get one localized notice and the chain stops here.
     if (user.is_banned === 1) {

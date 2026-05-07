@@ -21,8 +21,15 @@ export function buildMainMenuKeyboard(ctx: AppContext): InlineKeyboard {
   const kb = new InlineKeyboard()
     .text(ctx.t('menu.my_files'), 'menu:files')
     .text(ctx.t('menu.my_bots'), 'menu:bots')
-    .row()
-    .text(ctx.t('menu.settings'), 'menu:settings')
+    .row();
+
+  // Surface a quick-access "💳 Credits" tile only when the system is on,
+  // so a free-for-all deploy stays uncluttered.
+  if (ctx.services.credits.isEnabled()) {
+    kb.text(ctx.t('menu.credits'), 'credit:balance').row();
+  }
+
+  kb.text(ctx.t('menu.settings'), 'menu:settings')
     .text(ctx.t('menu.help'), 'menu:help');
 
   // Show the admin entry to anyone who has SOME moderation surface — system

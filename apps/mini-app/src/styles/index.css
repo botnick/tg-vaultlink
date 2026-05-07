@@ -52,11 +52,100 @@ body,
   color: var(--tg-text);
 }
 
+/* -------------------------------------------------------------------------- *
+ * Mobile hardening — iOS Safari / Android WebView quirks.
+ *
+ *   - `touch-action: manipulation` on the document and every interactive
+ *     element disables double-tap-to-zoom and the legacy 300ms click
+ *     delay. The viewport meta (`user-scalable=no`) covers most browsers
+ *     but iOS 10+ ignores it for a11y; this CSS is the actual enforcement.
+ *   - `-webkit-tap-highlight-color: transparent` removes the grey flash
+ *     iOS draws over tapped links/buttons.
+ *   - `-webkit-touch-callout: none` on chrome stops the long-press
+ *     context menu on icons/buttons; we re-enable it on text/content
+ *     surfaces below.
+ *   - `-webkit-text-size-adjust: 100%` keeps text from auto-resizing
+ *     after a landscape rotation on iOS.
+ *   - `font-size: 16px` minimum on form fields prevents iOS from
+ *     zooming the page in when the keyboard opens.
+ *   - `overscroll-behavior: none` everywhere stops the rubber-band
+ *     bounce from scrolling the Telegram host instead of our content.
+ * -------------------------------------------------------------------------- */
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  overscroll-behavior-y: none;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+  /* Disable iOS text selection by default — re-enabled on content below. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Re-enable text selection on the surfaces where users actually read /
+   copy text. Keeps chrome (nav, buttons, headers) tap-only. */
+p,
+span,
+li,
+pre,
+code,
+input,
+textarea,
+[contenteditable='true'],
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* Every interactive element gets `manipulation` so taps are dispatched
+   immediately and double-tap zoom never triggers, even on browsers that
+   honour the viewport's `user-scalable` flag for accessibility. */
+a,
+button,
+label,
+[role='button'],
+[role='link'],
+[role='tab'],
+[role='menuitem'],
+input,
+textarea,
+select,
+summary {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS auto-zooms when a focused input has computed font-size < 16px.
+   Force the floor on every editable field. */
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+/* Prevent the on-screen keyboard from masking the focused field on
+   short viewports — modern browsers honour `scroll-margin-bottom`. */
+input:focus,
+textarea:focus,
+select:focus {
+  scroll-margin-bottom: 96px;
+}
+
+/* Images and SVGs should never be draggable on touch — long-press would
+   otherwise pop the iOS share sheet. */
+img,
+svg {
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
 }
 
 [data-locale='th'] body {
@@ -267,6 +356,24 @@ body {
   scrollbar-width: none;
 }
 
+/* Wave 9.3 — soft pulse for the "waiting for payment" QR card. The ring
+   gradient stays in place; the box-shadow breathes outward to draw the eye
+   without distracting from the QR data itself. */
+@keyframes qr-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(122, 162, 247, 0.45);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(122, 162, 247, 0);
+    transform: scale(1.012);
+  }
+}
+.qr-pulse {
+  animation: qr-pulse 2.4s ease-in-out infinite;
+}
+
 /* Reduced motion — respect the user's OS preference. The hero gets a
    static gradient and animations decay into instant transitions. */
 @media (prefers-reduced-motion: reduce) {
@@ -275,7 +382,8 @@ body {
     animation: none !important;
   }
   .fade-up,
-  .skeleton {
+  .skeleton,
+  .qr-pulse {
     animation: none !important;
   }
 }

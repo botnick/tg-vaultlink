@@ -28,6 +28,11 @@ const ALLOWED_UPDATE_TYPES = new Set<string>([
   'edited_message',
   'inline_query',
   'chosen_inline_result',
+  // Wave 9 — Telegram Stars topup. `successful_payment` arrives as a
+  // `message` so it is covered by the existing 'message' entry; the
+  // `pre_checkout_query` is its own update type and must be whitelisted
+  // explicitly for the topup flow to work end to end.
+  'pre_checkout_query',
 ]);
 
 /* ------------------------------------------------------------------------- *
@@ -67,6 +72,22 @@ const intFromString = (opts: { min?: number; max?: number } = {}) =>
     }
     return n;
   });
+
+/**
+ * Wave 9.3 — apply a default to a typed env knob when the operator's
+ * `.env` doesn't define it. Used for new fields so existing deploys keep
+ * booting after pulling the latest code without anyone needing to hand-
+ * edit `.env`. The default still flows through the same validator, so a
+ * misconfigured override still fails loudly.
+ */
+const intFromStringWithDefault = (defaultStr: string, opts: { min?: number; max?: number } = {}) =>
+  z.preprocess((v) => v ?? defaultStr, intFromString(opts));
+
+const stringWithDefault = (defaultStr: string) =>
+  z.preprocess(
+    (v) => v ?? defaultStr,
+    z.string().transform((s) => s.trim()),
+  );
 
 const httpUrlNoTrailingSlash = z.string().transform((raw, ctx) => {
   const v = raw.trim();
@@ -284,6 +305,96 @@ const baseSchema = z.object({
   RUNNER_CONCURRENCY: intFromString({ min: 1, max: 10_000 }),
   CHILD_BOT_MAX_PARALLEL_STARTS: intFromString({ min: 1, max: 256 }),
   BROADCAST_DELAY_MS: intFromString({ min: 0, max: 10_000 }),
+
+  // Wave 9 — credit system. Every value is a static default; runtime
+  // overrides live in the `settings` table and are read via SettingsService.
+  // Setting `ENABLE_CREDITS=false` makes the system invisible — no charges,
+  // no UI, no signup bonus — so the bot stays a free-for-all unless flipped
+  // on either via env or `/admin → Credits → System toggle`.
+  ENABLE_CREDITS: boolFromString,
+  CREDITS_SIGNUP_BONUS: intFromString({ min: 0, max: 1_000_000 }),
+  CREDITS_COST_DECODE: intFromString({ min: 0, max: 1_000_000 }),
+  CREDITS_COST_COLLECTION_OPEN: intFromString({ min: 0, max: 1_000_000 }),
+  CREDITS_COST_COLLECTION_SEND: intFromString({ min: 0, max: 1_000_000 }),
+  CREDITS_REFERRAL_ENABLED: boolFromString,
+  CREDITS_REFERRAL_REWARD: intFromString({ min: 0, max: 1_000_000 }),
+  CREDITS_REFERRAL_DAILY_CAP: intFromString({ min: 0, max: 1_000_000 }),
+  // Anti-farming: per-(creator, redeemer) lifetime cap. A single redeemer
+  // can earn the same creator at most this many referral rewards EVER.
+  // Default 5 follows Dropbox-style "you only refer a friend once" but
+  // gives a small buffer so legitimate friend pairs aren't punished.
+  // 0 = unlimited (anti-farm off, NOT recommended).
+  CREDITS_REFERRAL_PAIR_LIFETIME_CAP: intFromString({ min: 0, max: 1_000_000 }),
+  CREDITS_REFERRAL_PAIR_WINDOW_MINUTES: intFromString({ min: 0, max: 1_440 }),
+  CREDITS_REFERRAL_PAIR_WINDOW_MAX: intFromString({ min: 0, max: 1_000_000 }),
+  // Redeemer quarantine: a brand-new account must be at least this many
+  // minutes old before opening a code triggers a referral reward. Defeats
+  // throwaway-alt farms. 0 = quarantine disabled.
+  CREDITS_REFERRAL_REDEEMER_MIN_AGE_MINUTES: intFromString({ min: 0, max: 60 * 24 * 30 }),
+  CREDITS_TOPUP_ENABLED: boolFromString,
+  CREDITS_BYPASS_FOR_OWNER: boolFromString,
+  CREDITS_BYPASS_FOR_ADMIN: boolFromString,
+
+  // Wave 9.1 — self-custodial crypto top-up. Master switch + worker
+  // cadence + per-chain default thresholds. Address / api_key / rate
+  // overrides live in the settings table so an operator can rotate keys
+  // without redeploying. Wave 9.3 added BSC/ETH adapters and USDC tokens
+  // across all four networks, with per-network RPC URLs.
+  ENABLE_CRYPTO_TOPUP: boolFromString,
+  CRYPTO_INVOICE_TTL_MINUTES: intFromString({ min: 5, max: 24 * 60 }),
+  CRYPTO_POLL_INTERVAL_SECONDS: intFromString({ min: 5, max: 600 }),
+  CRYPTO_AMOUNT_TOLERANCE_BPS: intFromString({ min: 0, max: 10_000 }),
+  // Per-network RPC endpoints. Empty string disables the matching adapters
+  // (so an operator can ship with BSC enabled but ETH off, etc.). When set,
+  // must be a valid http(s) URL. The bot is watch-only — never holds keys.
+  // Wave 9.3 — defaults match `.env.example` so existing deploys boot without
+  // hand-editing `.env`. ETH defaults to empty (operator must supply RPC).
+  CRYPTO_TRON_RPC_URL: stringWithDefault('https://api.trongrid.io'),
+  CRYPTO_BSC_RPC_URL: stringWithDefault('https://bsc-dataseed.binance.org'),
+  CRYPTO_ETH_RPC_URL: stringWithDefault(''),
+  CRYPTO_TON_RPC_URL: stringWithDefault('https://toncenter.com/api/v2'),
+  // Per-token confirmation thresholds. Defaults: TRX/TON=1 (fast finality),
+  // BSC=15 (~45s, safe for ≤$5k retail), ETH=12 (~2.4 min, exchange standard).
+  CRYPTO_TRON_USDT_CONFIRMATIONS: intFromStringWithDefault('1', { min: 1, max: 1_000 }),
+  CRYPTO_TRON_USDT_RATE: intFromStringWithDefault('100', { min: 1, max: 1_000_000 }),
+  CRYPTO_TRON_USDC_CONFIRMATIONS: intFromStringWithDefault('1', { min: 1, max: 1_000 }),
+  CRYPTO_TRON_USDC_RATE: intFromStringWithDefault('100', { min: 1, max: 1_000_000 }),
+  CRYPTO_BSC_USDT_CONFIRMATIONS: intFromStringWithDefault('15', { min: 1, max: 1_000 }),
+  CRYPTO_BSC_USDT_RATE: intFromStringWithDefault('100', { min: 1, max: 1_000_000 }),
+  CRYPTO_BSC_USDC_CONFIRMATIONS: intFromStringWithDefault('15', { min: 1, max: 1_000 }),
+  CRYPTO_BSC_USDC_RATE: intFromStringWithDefault('100', { min: 1, max: 1_000_000 }),
+  CRYPTO_ETH_USDT_CONFIRMATIONS: intFromStringWithDefault('12', { min: 1, max: 1_000 }),
+  CRYPTO_ETH_USDT_RATE: intFromStringWithDefault('100', { min: 1, max: 1_000_000 }),
+  CRYPTO_ETH_USDC_CONFIRMATIONS: intFromStringWithDefault('12', { min: 1, max: 1_000 }),
+  CRYPTO_ETH_USDC_RATE: intFromStringWithDefault('100', { min: 1, max: 1_000_000 }),
+  CRYPTO_TON_NATIVE_CONFIRMATIONS: intFromStringWithDefault('1', { min: 1, max: 1_000 }),
+  CRYPTO_TON_NATIVE_RATE: intFromStringWithDefault('30', { min: 1, max: 1_000_000 }),
+  CRYPTO_TON_USDT_CONFIRMATIONS: intFromStringWithDefault('1', { min: 1, max: 1_000 }),
+  CRYPTO_TON_USDT_RATE: intFromStringWithDefault('100', { min: 1, max: 1_000_000 }),
+  CRYPTO_TON_USDC_CONFIRMATIONS: intFromStringWithDefault('1', { min: 1, max: 1_000 }),
+  CRYPTO_TON_USDC_RATE: intFromStringWithDefault('100', { min: 1, max: 1_000_000 }),
+  // Abuse defenses (Wave 9.3): cap concurrent active invoices per user and
+  // rate-limit invoice creation to prevent enumeration / DoS. Dust threshold
+  // tells the worker to ignore inbound transfers below this USD value so an
+  // attacker can't fill the match queue with sub-cent transfers (0=disabled).
+  CRYPTO_MAX_ACTIVE_INVOICES_PER_USER: intFromStringWithDefault('3', { min: 1, max: 100 }),
+  CRYPTO_INVOICE_RATELIMIT_PER_MIN: intFromStringWithDefault('5', { min: 1, max: 1_000 }),
+  CRYPTO_DUST_THRESHOLD_USD: intFromStringWithDefault('0', { min: 0, max: 1_000 }),
+
+  // Wave 9.2 — Stars refund defense. The on-chain refund event is delivered
+  // by Telegram (`message:refunded_payment`); these knobs decide what we do
+  // about it. STARS_REFUND_LOCK_SECONDS_PER_STAR is the per-Star lock
+  // multiplier (3600 = 1 hour/Star → 100 Stars ≈ 4.17 days), capped at
+  // STARS_REFUND_LOCK_MAX_SECONDS so a million-Star refund can't lock for
+  // a century. Three refunds inside the rolling window flip is_banned.
+  STARS_REFUND_LOCK_SECONDS_PER_STAR: intFromString({ min: 0, max: 30 * 24 * 3600 }),
+  STARS_REFUND_LOCK_MAX_SECONDS: intFromString({ min: 0, max: 365 * 24 * 3600 }),
+  STARS_REFUND_HARD_BAN_THRESHOLD: intFromString({ min: 0, max: 100 }),
+  STARS_REFUND_HARD_BAN_WINDOW_DAYS: intFromString({ min: 1, max: 365 }),
+  // Per-user rate limit for the Mini App's createInvoiceLink endpoint. Prevents
+  // a hostile client from spamming Telegram with invoice creations and
+  // burning the bot's global API quota.
+  MINI_APP_STARS_INVOICE_RATELIMIT_PER_MIN: intFromString({ min: 1, max: 60 }),
 });
 
 const schema = baseSchema.superRefine((parsed, ctx) => {
@@ -319,6 +430,35 @@ const schema = baseSchema.superRefine((parsed, ctx) => {
       });
     }
   }
+  // Wave 9.3 — every non-empty crypto RPC URL must be a valid http(s) URL.
+  // We don't gate on ENABLE_CRYPTO_TOPUP because adapters can be selectively
+  // wired (some networks on, some off) — but if you supply a URL it has to
+  // parse, otherwise the adapter would fail silently at first call.
+  const rpcUrlFields = [
+    'CRYPTO_TRON_RPC_URL',
+    'CRYPTO_BSC_RPC_URL',
+    'CRYPTO_ETH_RPC_URL',
+    'CRYPTO_TON_RPC_URL',
+  ] as const;
+  for (const field of rpcUrlFields) {
+    const v = parsed[field];
+    if (v.length === 0) continue;
+    let ok = false;
+    try {
+      const u = new URL(v);
+      ok = u.protocol === 'http:' || u.protocol === 'https:';
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: 'must be a valid http(s) URL or empty',
+      });
+    }
+  }
+
   if (parsed.TELEGRAM_UPDATE_MODE === 'webhook') {
     const isHttpsUrl = (v: string) => {
       if (!v) return false;
@@ -413,6 +553,59 @@ export interface Config {
   RUNNER_CONCURRENCY: number;
   CHILD_BOT_MAX_PARALLEL_STARTS: number;
   BROADCAST_DELAY_MS: number;
+
+  // Wave 9 — credit system static defaults (settings table overrides at runtime).
+  ENABLE_CREDITS: boolean;
+  CREDITS_SIGNUP_BONUS: number;
+  CREDITS_COST_DECODE: number;
+  CREDITS_COST_COLLECTION_OPEN: number;
+  CREDITS_COST_COLLECTION_SEND: number;
+  CREDITS_REFERRAL_ENABLED: boolean;
+  CREDITS_REFERRAL_REWARD: number;
+  CREDITS_REFERRAL_DAILY_CAP: number;
+  CREDITS_REFERRAL_PAIR_LIFETIME_CAP: number;
+  CREDITS_REFERRAL_PAIR_WINDOW_MINUTES: number;
+  CREDITS_REFERRAL_PAIR_WINDOW_MAX: number;
+  CREDITS_REFERRAL_REDEEMER_MIN_AGE_MINUTES: number;
+  CREDITS_TOPUP_ENABLED: boolean;
+  CREDITS_BYPASS_FOR_OWNER: boolean;
+  CREDITS_BYPASS_FOR_ADMIN: boolean;
+  ENABLE_CRYPTO_TOPUP: boolean;
+  CRYPTO_INVOICE_TTL_MINUTES: number;
+  CRYPTO_POLL_INTERVAL_SECONDS: number;
+  CRYPTO_AMOUNT_TOLERANCE_BPS: number;
+  CRYPTO_TRON_RPC_URL: string;
+  CRYPTO_BSC_RPC_URL: string;
+  CRYPTO_ETH_RPC_URL: string;
+  CRYPTO_TON_RPC_URL: string;
+  CRYPTO_TRON_USDT_CONFIRMATIONS: number;
+  CRYPTO_TRON_USDT_RATE: number;
+  CRYPTO_TRON_USDC_CONFIRMATIONS: number;
+  CRYPTO_TRON_USDC_RATE: number;
+  CRYPTO_BSC_USDT_CONFIRMATIONS: number;
+  CRYPTO_BSC_USDT_RATE: number;
+  CRYPTO_BSC_USDC_CONFIRMATIONS: number;
+  CRYPTO_BSC_USDC_RATE: number;
+  CRYPTO_ETH_USDT_CONFIRMATIONS: number;
+  CRYPTO_ETH_USDT_RATE: number;
+  CRYPTO_ETH_USDC_CONFIRMATIONS: number;
+  CRYPTO_ETH_USDC_RATE: number;
+  CRYPTO_TON_NATIVE_CONFIRMATIONS: number;
+  CRYPTO_TON_NATIVE_RATE: number;
+  CRYPTO_TON_USDT_CONFIRMATIONS: number;
+  CRYPTO_TON_USDT_RATE: number;
+  CRYPTO_TON_USDC_CONFIRMATIONS: number;
+  CRYPTO_TON_USDC_RATE: number;
+  CRYPTO_MAX_ACTIVE_INVOICES_PER_USER: number;
+  CRYPTO_INVOICE_RATELIMIT_PER_MIN: number;
+  CRYPTO_DUST_THRESHOLD_USD: number;
+
+  // Wave 9.2 — Stars refund defense.
+  STARS_REFUND_LOCK_SECONDS_PER_STAR: number;
+  STARS_REFUND_LOCK_MAX_SECONDS: number;
+  STARS_REFUND_HARD_BAN_THRESHOLD: number;
+  STARS_REFUND_HARD_BAN_WINDOW_DAYS: number;
+  MINI_APP_STARS_INVOICE_RATELIMIT_PER_MIN: number;
 }
 
 /**
@@ -511,6 +704,55 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     RUNNER_CONCURRENCY: parsed.RUNNER_CONCURRENCY,
     CHILD_BOT_MAX_PARALLEL_STARTS: parsed.CHILD_BOT_MAX_PARALLEL_STARTS,
     BROADCAST_DELAY_MS: parsed.BROADCAST_DELAY_MS,
+    ENABLE_CREDITS: parsed.ENABLE_CREDITS,
+    CREDITS_SIGNUP_BONUS: parsed.CREDITS_SIGNUP_BONUS,
+    CREDITS_COST_DECODE: parsed.CREDITS_COST_DECODE,
+    CREDITS_COST_COLLECTION_OPEN: parsed.CREDITS_COST_COLLECTION_OPEN,
+    CREDITS_COST_COLLECTION_SEND: parsed.CREDITS_COST_COLLECTION_SEND,
+    CREDITS_REFERRAL_ENABLED: parsed.CREDITS_REFERRAL_ENABLED,
+    CREDITS_REFERRAL_REWARD: parsed.CREDITS_REFERRAL_REWARD,
+    CREDITS_REFERRAL_DAILY_CAP: parsed.CREDITS_REFERRAL_DAILY_CAP,
+    CREDITS_REFERRAL_PAIR_LIFETIME_CAP: parsed.CREDITS_REFERRAL_PAIR_LIFETIME_CAP,
+    CREDITS_REFERRAL_PAIR_WINDOW_MINUTES: parsed.CREDITS_REFERRAL_PAIR_WINDOW_MINUTES,
+    CREDITS_REFERRAL_PAIR_WINDOW_MAX: parsed.CREDITS_REFERRAL_PAIR_WINDOW_MAX,
+    CREDITS_REFERRAL_REDEEMER_MIN_AGE_MINUTES: parsed.CREDITS_REFERRAL_REDEEMER_MIN_AGE_MINUTES,
+    CREDITS_TOPUP_ENABLED: parsed.CREDITS_TOPUP_ENABLED,
+    CREDITS_BYPASS_FOR_OWNER: parsed.CREDITS_BYPASS_FOR_OWNER,
+    CREDITS_BYPASS_FOR_ADMIN: parsed.CREDITS_BYPASS_FOR_ADMIN,
+    ENABLE_CRYPTO_TOPUP: parsed.ENABLE_CRYPTO_TOPUP,
+    CRYPTO_INVOICE_TTL_MINUTES: parsed.CRYPTO_INVOICE_TTL_MINUTES,
+    CRYPTO_POLL_INTERVAL_SECONDS: parsed.CRYPTO_POLL_INTERVAL_SECONDS,
+    CRYPTO_AMOUNT_TOLERANCE_BPS: parsed.CRYPTO_AMOUNT_TOLERANCE_BPS,
+    CRYPTO_TRON_RPC_URL: parsed.CRYPTO_TRON_RPC_URL,
+    CRYPTO_BSC_RPC_URL: parsed.CRYPTO_BSC_RPC_URL,
+    CRYPTO_ETH_RPC_URL: parsed.CRYPTO_ETH_RPC_URL,
+    CRYPTO_TON_RPC_URL: parsed.CRYPTO_TON_RPC_URL,
+    CRYPTO_TRON_USDT_CONFIRMATIONS: parsed.CRYPTO_TRON_USDT_CONFIRMATIONS,
+    CRYPTO_TRON_USDT_RATE: parsed.CRYPTO_TRON_USDT_RATE,
+    CRYPTO_TRON_USDC_CONFIRMATIONS: parsed.CRYPTO_TRON_USDC_CONFIRMATIONS,
+    CRYPTO_TRON_USDC_RATE: parsed.CRYPTO_TRON_USDC_RATE,
+    CRYPTO_BSC_USDT_CONFIRMATIONS: parsed.CRYPTO_BSC_USDT_CONFIRMATIONS,
+    CRYPTO_BSC_USDT_RATE: parsed.CRYPTO_BSC_USDT_RATE,
+    CRYPTO_BSC_USDC_CONFIRMATIONS: parsed.CRYPTO_BSC_USDC_CONFIRMATIONS,
+    CRYPTO_BSC_USDC_RATE: parsed.CRYPTO_BSC_USDC_RATE,
+    CRYPTO_ETH_USDT_CONFIRMATIONS: parsed.CRYPTO_ETH_USDT_CONFIRMATIONS,
+    CRYPTO_ETH_USDT_RATE: parsed.CRYPTO_ETH_USDT_RATE,
+    CRYPTO_ETH_USDC_CONFIRMATIONS: parsed.CRYPTO_ETH_USDC_CONFIRMATIONS,
+    CRYPTO_ETH_USDC_RATE: parsed.CRYPTO_ETH_USDC_RATE,
+    CRYPTO_TON_NATIVE_CONFIRMATIONS: parsed.CRYPTO_TON_NATIVE_CONFIRMATIONS,
+    CRYPTO_TON_NATIVE_RATE: parsed.CRYPTO_TON_NATIVE_RATE,
+    CRYPTO_TON_USDT_CONFIRMATIONS: parsed.CRYPTO_TON_USDT_CONFIRMATIONS,
+    CRYPTO_TON_USDT_RATE: parsed.CRYPTO_TON_USDT_RATE,
+    CRYPTO_TON_USDC_CONFIRMATIONS: parsed.CRYPTO_TON_USDC_CONFIRMATIONS,
+    CRYPTO_TON_USDC_RATE: parsed.CRYPTO_TON_USDC_RATE,
+    CRYPTO_MAX_ACTIVE_INVOICES_PER_USER: parsed.CRYPTO_MAX_ACTIVE_INVOICES_PER_USER,
+    CRYPTO_INVOICE_RATELIMIT_PER_MIN: parsed.CRYPTO_INVOICE_RATELIMIT_PER_MIN,
+    CRYPTO_DUST_THRESHOLD_USD: parsed.CRYPTO_DUST_THRESHOLD_USD,
+    STARS_REFUND_LOCK_SECONDS_PER_STAR: parsed.STARS_REFUND_LOCK_SECONDS_PER_STAR,
+    STARS_REFUND_LOCK_MAX_SECONDS: parsed.STARS_REFUND_LOCK_MAX_SECONDS,
+    STARS_REFUND_HARD_BAN_THRESHOLD: parsed.STARS_REFUND_HARD_BAN_THRESHOLD,
+    STARS_REFUND_HARD_BAN_WINDOW_DAYS: parsed.STARS_REFUND_HARD_BAN_WINDOW_DAYS,
+    MINI_APP_STARS_INVOICE_RATELIMIT_PER_MIN: parsed.MINI_APP_STARS_INVOICE_RATELIMIT_PER_MIN,
   };
 
   return Object.freeze(cfg);

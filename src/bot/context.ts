@@ -34,6 +34,11 @@ import type { CollectionRepository } from '../repositories/collection.repository
 import type { CollectionDraftRepository } from '../repositories/collectionDraft.repository.js';
 import type { BroadcastRepository } from '../repositories/broadcast.repository.js';
 import type { BroadcastService } from '../services/broadcast.service.js';
+import type { CreditRepository } from '../repositories/credit.repository.js';
+import type { CreditService } from '../services/credit.service.js';
+import type { CryptoInvoiceRepository } from '../repositories/cryptoInvoice.repository.js';
+import type { CryptoTopupService } from '../services/crypto/cryptoTopup.service.js';
+import type { PaymentsService } from '../services/payments.service.js';
 
 /** Domain services available to every handler. */
 export interface AppServices {
@@ -49,6 +54,12 @@ export interface AppServices {
   share: ShareService;
   /** Wave 8 — announcement broadcasts. */
   broadcast: BroadcastService;
+  /** Wave 9 — dynamic credit system (charge/refund/referral/topup). */
+  credits: CreditService;
+  /** Wave 9.1 — self-custodial crypto top-up. */
+  crypto: CryptoTopupService;
+  /** Wave 9.2 — Stars invoice link + admin Stars refund. */
+  payments: PaymentsService;
 }
 
 /** Repositories available to every handler. */
@@ -66,6 +77,10 @@ export interface AppRepos {
   collectionDrafts: CollectionDraftRepository;
   /** Wave 8 — broadcasts + per-recipient delivery rows. */
   broadcasts: BroadcastRepository;
+  /** Wave 9 — credit ledger. */
+  credits: CreditRepository;
+  /** Wave 9.1 — crypto invoices. */
+  cryptoInvoices: CryptoInvoiceRepository;
 }
 
 /**

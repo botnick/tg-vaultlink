@@ -20,7 +20,15 @@ import { useT } from '../lib/i18n.js';
 import { apiGet } from '../lib/api.js';
 import { qk } from '../lib/queryKeys.js';
 import type { BotSummary, FileSummary, PageResponse } from '../types/api.js';
-import { AdminIcon, BotsIcon, FilesIcon, SettingsIcon } from '../components/icons.js';
+import {
+  AdminIcon,
+  BotsIcon,
+  CreditsIcon,
+  FilesIcon,
+  FlagIcon,
+  SettingsIcon,
+} from '../components/icons.js';
+import { creditsApi } from '../lib/credits.api.js';
 
 interface ShortcutTileProps {
   to: string;
@@ -68,9 +76,19 @@ export function Home(): JSX.Element {
     queryKey: qk.bots.list(0, 1),
     queryFn: () => apiGet<PageResponse<BotSummary>>('/bots?limit=1'),
   });
+  // Cheap balance fetch — same query key the BottomNav and Credits page
+  // use, so the result is shared across all three surfaces.
+  const creditsQuery = useQuery({
+    queryKey: qk.credits.summary,
+    queryFn: () => creditsApi.summary(),
+    staleTime: 30_000,
+    retry: 0,
+  });
 
   const fileCount = filesQuery.data?.total ?? filesQuery.data?.items.length ?? 0;
   const botCount = botsQuery.data?.total ?? botsQuery.data?.items.length ?? 0;
+  const creditsEnabled = creditsQuery.data?.enabled ?? false;
+  const balance = creditsQuery.data?.balance ?? 0;
   const greetingName = user?.first_name ?? user?.username ?? null;
 
   return (
@@ -86,7 +104,12 @@ export function Home(): JSX.Element {
                 : t('home.greeting')}
             </h2>
 
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div
+              className={[
+                'mt-5 grid gap-3',
+                creditsEnabled ? 'grid-cols-3' : 'grid-cols-2',
+              ].join(' ')}
+            >
               <div className="glass-dark rounded-2xl p-4">
                 <p className="text-[11px] uppercase tracking-wider opacity-75">
                   {t('home.stats.files')}
@@ -99,6 +122,17 @@ export function Home(): JSX.Element {
                 </p>
                 <p className="mt-1.5 text-3xl font-bold">{botCount}</p>
               </div>
+              {creditsEnabled && (
+                <Link
+                  to="/credits"
+                  className="glass-dark press-scale block rounded-2xl p-4"
+                >
+                  <p className="text-[11px] uppercase tracking-wider opacity-75">
+                    {t('credits.balance')}
+                  </p>
+                  <p className="mt-1.5 text-3xl font-bold tabular-nums">{balance}</p>
+                </Link>
+              )}
             </div>
           </div>
           <span className="shine-overlay" />
@@ -119,6 +153,22 @@ export function Home(): JSX.Element {
             iconBg="bg-gradient-to-br from-brand-cyan to-brand-teal"
             title={t('nav.bots')}
             subtitle={t('home.shortcuts.bots')}
+          />
+          {creditsEnabled && (
+            <ShortcutTile
+              to="/credits"
+              icon={<CreditsIcon size={22} />}
+              iconBg="bg-gradient-to-br from-brand-cyan to-brand-violet"
+              title={t('nav.credits')}
+              subtitle={t('home.shortcuts.credits')}
+            />
+          )}
+          <ShortcutTile
+            to="/my-reports"
+            icon={<FlagIcon size={22} />}
+            iconBg="bg-gradient-to-br from-brand-fuchsia to-brand-violet"
+            title={t('home.shortcuts.my_reports_title')}
+            subtitle={t('home.shortcuts.my_reports_subtitle')}
           />
           <ShortcutTile
             to="/settings"

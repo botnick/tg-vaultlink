@@ -72,6 +72,17 @@ export function AdminIcon(props: IconProps): JSX.Element {
   );
 }
 
+export function CreditsIcon(props: IconProps): JSX.Element {
+  const filled = props.filled === true;
+  return (
+    <svg {...base(props)} fill={filled ? 'currentColor' : 'none'}>
+      <rect x="2" y="6" width="20" height="13" rx="2" />
+      <path d="M2 10h20" />
+      <path d="M6 15h4" />
+    </svg>
+  );
+}
+
 export function LockIcon(props: IconProps): JSX.Element {
   return (
     <svg {...base(props)}>

@@ -101,14 +101,83 @@ export interface SettingsResponse {
 
 /* ---------- Reports / audit ---------- */
 
+export type ReportTargetType = 'file' | 'collection';
+
+export type ReportReasonCategory =
+  | 'spam'
+  | 'illegal'
+  | 'copyright'
+  | 'malware'
+  | 'scam'
+  | 'other';
+
+export const REPORT_REASON_CATEGORIES: readonly ReportReasonCategory[] = [
+  'spam',
+  'illegal',
+  'copyright',
+  'malware',
+  'scam',
+  'other',
+] as const;
+
+/** User chip — minimal fields safe to render as `@username` next to a row. */
+export interface ReportUserChip {
+  id: number;
+  telegram_user_id: string;
+  username: string | null;
+  first_name: string | null;
+}
+
+/** Server-resolved target context attached to admin & reporter rows. */
+export interface ReportTargetSummary {
+  kind: ReportTargetType;
+  id: number;
+  code: string;
+  /** `botname:CODE…` form — copyable share code. */
+  share_code: string;
+  /** File-only fields (null for collections). */
+  file_type: FileType | null;
+  file_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  /** Collection-only fields (null for files). */
+  title: string | null;
+  total_items: number | null;
+  is_locked: boolean;
+  is_deleted: boolean;
+  owner: ReportUserChip | null;
+  bot: { id: number; username: string } | null;
+}
+
 export interface ReportRow {
   id: number;
-  file_id: number | null;
+  target_type: ReportTargetType;
+  target_id: number;
   reporter_user_id: number | null;
   reason: string;
+  reason_category: ReportReasonCategory;
   status: ReportStatus;
   created_at: string;
   updated_at: string;
+  /** Server-enriched target summary (admin queue + per-id detail). */
+  target: ReportTargetSummary | null;
+  reporter: ReportUserChip | null;
+  /** Total pending reports filed against this same target — used to badge
+   *  "auto-locked" cards even when the target's `is_locked` flag was
+   *  toggled manually. */
+  pending_count_for_target: number;
+  other_reports_count: number;
+}
+
+/** Reporter's own row — same target enrichment, no reporter chip. */
+export interface MyReportRow {
+  id: number;
+  status: ReportStatus;
+  reason: string;
+  reason_category: ReportReasonCategory;
+  created_at: string;
+  updated_at: string;
+  target: ReportTargetSummary | null;
 }
 
 export interface AuditLogRow {
@@ -185,6 +254,11 @@ export interface AdminStats {
   activeFiles?: number;
   downloads: number;
   pendingReports: number;
+  /** Wave 9.2 — extended health tiles. May be missing on older servers. */
+  bannedUsers?: number;
+  superAdmins?: number;
+  spendLockedUsers?: number;
+  pendingCryptoInvoices?: number;
 }
 
 /* ---------- Collections ---------- */
@@ -315,6 +389,11 @@ export interface BroadcastAudiencePreview {
 export interface PageResponse<T> {
   items: T[];
   total?: number;
+}
+
+/** Admin Reports list response — adds per-status counts for tab badges. */
+export interface AdminReportsPage extends PageResponse<ReportRow> {
+  counts: { pending: number; reviewed: number; dismissed: number };
 }
 
 /* ---------- Error envelope ---------- */

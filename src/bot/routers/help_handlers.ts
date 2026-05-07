@@ -25,6 +25,11 @@ export function getHelpPages(ctx: AppContext): HelpPage[] {
     { label: '🤖', bodyKey: 'help.page.bots' },
     { label: '🔧', bodyKey: 'help.page.settings' },
   ];
+  // Surface the credits help tab only when the system is enabled — keeps
+  // the help surface tidy on free-for-all deploys.
+  if (ctx.services.credits.isEnabled()) {
+    pages.push({ label: '💳', bodyKey: 'help.page.credits' });
+  }
   if (ctx.services.permission.isModerator(ctx.user)) {
     pages.push({ label: '🛡', bodyKey: 'help.page.admin' });
   }

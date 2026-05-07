@@ -416,11 +416,26 @@ async function finalizeSession(
         meta,
       });
       fctx.repos.collectionDrafts.delete(draft.id);
-      const text = t(fctx.locale, 'upload.success', {
-        shareCode: escapeHtml(result.shareCode),
-        deepLink: escapeHtml(result.deepLink),
-      });
-      await fctx.api.sendMessage(fctx.chatId, text, {
+      const lines: string[] = [
+        t(fctx.locale, 'upload.success', {
+          shareCode: escapeHtml(result.shareCode),
+          deepLink: escapeHtml(result.deepLink),
+        }),
+      ];
+      // Wave 9 — viral nudge. Only render when credits + referral are on
+      // and the reward amount is non-zero.
+      if (
+        fctx.services.credits.isEnabled() &&
+        fctx.services.credits.isReferralEnabled() &&
+        fctx.services.credits.referralRewardAmount() > 0
+      ) {
+        lines.push(
+          t(fctx.locale, 'credits.share.referral_hint', {
+            amount: fctx.services.credits.referralRewardAmount(),
+          }),
+        );
+      }
+      await fctx.api.sendMessage(fctx.chatId, lines.join('\n'), {
         parse_mode: 'HTML',
         link_preview_options: { is_disabled: true },
       });
@@ -470,6 +485,17 @@ async function finalizeAsCollection(
     ];
     if (result.collection.description) {
       lines.push(`📝 ${escapeHtml(result.collection.description)}`);
+    }
+    if (
+      fctx.services.credits.isEnabled() &&
+      fctx.services.credits.isReferralEnabled() &&
+      fctx.services.credits.referralRewardAmount() > 0
+    ) {
+      lines.push(
+        t(fctx.locale, 'credits.share.referral_hint', {
+          amount: fctx.services.credits.referralRewardAmount(),
+        }),
+      );
     }
     await fctx.api.sendMessage(fctx.chatId, lines.join('\n'), {
       parse_mode: 'HTML',

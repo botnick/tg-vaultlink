@@ -51,4 +51,32 @@ export const qk = {
     recipients: (id: number | string, status: string | null, page: number, pageSize: number) =>
       ['broadcasts', 'recipients', String(id), status ?? '', page, pageSize] as const,
   },
+
+  credits: {
+    all: ['credits'] as const,
+    summary: ['credits', 'summary'] as const,
+    history: (cursor: number) => ['credits', 'history', cursor] as const,
+  },
+
+  myReports: {
+    all: ['my-reports'] as const,
+    list: (status: string | null, page: number, pageSize: number) =>
+      ['my-reports', 'list', status ?? '', page, pageSize] as const,
+    count: ['my-reports', 'count'] as const,
+  },
+
+  crypto: {
+    all: ['crypto'] as const,
+    chains: ['crypto', 'chains'] as const,
+    invoices: ['crypto', 'invoices'] as const,
+    invoice: (id: number | string) => ['crypto', 'invoice', String(id)] as const,
+    adminInvoices: (status: string, offset: number) =>
+      ['crypto', 'admin', 'invoices', status, offset] as const,
+  },
+
+  adminCredits: {
+    all: ['admin', 'credits'] as const,
+    settings: ['admin', 'credits', 'settings'] as const,
+    stats: ['admin', 'credits', 'stats'] as const,
+  },
 } as const;

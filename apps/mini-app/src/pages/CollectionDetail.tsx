@@ -30,9 +30,11 @@ import { SkeletonCard } from '../components/SkeletonCard.js';
 import { StatusBadge } from '../components/StatusBadge.js';
 import { CopyButton } from '../components/CopyButton.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
+import { ReportSheet } from '../components/ReportSheet.js';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
+  FlagIcon,
   LockIcon,
   TrashIcon,
   UnlockIcon,
@@ -197,6 +199,7 @@ export function CollectionDetail(): JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [dialog, setDialog] = useState<DialogKind>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const [pendingItem, setPendingItem] = useState<CollectionItemSummary | null>(null);
   const [reorderingId, setReorderingId] = useState<number | null>(null);
   const [extraItems, setExtraItems] = useState<CollectionItemSummary[]>([]);
@@ -587,6 +590,14 @@ export function CollectionDetail(): JSX.Element {
               >
                 {t('collection_detail.delete')}
               </Button>
+              <Button
+                variant="ghost"
+                block
+                leftIcon={<FlagIcon size={18} />}
+                onClick={() => setReportOpen(true)}
+              >
+                {t('collection_detail.report')}
+              </Button>
             </div>
           </Card>
 
@@ -680,6 +691,18 @@ export function CollectionDetail(): JSX.Element {
           </Card>
         </div>
       )}
+
+      {collection ? (
+        <ReportSheet
+          open={reportOpen}
+          target={{
+            type: 'collection',
+            id: collection.id,
+            label: collection.title ?? collection.share_code,
+          }}
+          onClose={() => setReportOpen(false)}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={dialog === 'delete'}

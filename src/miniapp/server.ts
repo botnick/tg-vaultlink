@@ -29,6 +29,7 @@ import { AppError } from '../utils/errors.js';
 import { getLogger } from '../logger/logger.js';
 import type { Logger } from 'pino';
 import type { AppServices, AppRepos } from './types.js';
+import type { BotResolver } from '../services/broadcast.worker.js';
 import { authMiddleware, corsMiddleware, type MiniAppEnv } from './middlewares.js';
 import { settingsRoutes } from './routes/settings.routes.js';
 import { filesRoutes } from './routes/files.routes.js';
@@ -37,6 +38,8 @@ import { reportsRoutes } from './routes/reports.routes.js';
 import { adminRoutes } from './routes/admin.routes.js';
 import { collectionsRoutes } from './routes/collections.routes.js';
 import { broadcastsRoutes } from './routes/broadcasts.routes.js';
+import { creditsRoutes } from './routes/credits.routes.js';
+import { adminCreditsRoutes } from './routes/admin_credits.routes.js';
 
 const DEFAULT_PORT = 8081;
 
@@ -72,6 +75,13 @@ export interface MiniAppServerOptions {
   config: Config;
   services: AppServices;
   repos: AppRepos;
+  /**
+   * Resolves a managed bot id to its running grammY instance. Used by the
+   * admin Reports queue to forward reported content from the owning bot to
+   * the moderator's chat. Optional — when omitted, the "send to me" endpoint
+   * 503s with a clear error.
+   */
+  resolveBot?: BotResolver;
   /** Override the bind port (useful in tests). */
   port?: number;
   /** Override the bind hostname (defaults to `0.0.0.0`). */
@@ -90,7 +100,7 @@ export interface MiniAppServer {
  * but does not actually open a socket — call `start()` for that.
  */
 export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
-  const { config, services, repos } = opts;
+  const { config, services, repos, resolveBot } = opts;
   // Resolve the logger lazily so tests that bypass `getConfig()` (and supply
   // a hand-rolled config object directly) don't trigger the env-loader's
   // strict validation when the server is built.
@@ -140,9 +150,12 @@ export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
     try {
       await next();
     } finally {
-      // 5xx are real bugs → error. 4xx are expected (auth expiring,
-      // permission denied, not-found probes, etc.) → warn so the error
-      // log isn't flooded with normal traffic. 2xx stays quiet.
+      // 5xx are real bugs → error. 4xx are expected gating but worth
+      // surfacing → warn. 401 is special: it's the normal case for the
+      // dev preview, expired initData, or just before the Mini App boots,
+      // so warn-level would flood the log; we drop it silently. Operators
+      // who want to inspect auth failures can re-enable by lowering
+      // LOG_LEVEL or adding a temporary log here.
       const status = c.res.status;
       if (status >= 500) {
         log.error(
@@ -155,6 +168,8 @@ export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
           },
           'mini app: request finished with 5xx',
         );
+      } else if (status === 401) {
+        // expected — Mini App not authenticated yet
       } else if (status >= 400) {
         log.warn(
           {
@@ -187,7 +202,12 @@ export function createMiniAppServer(opts: MiniAppServerOptions): MiniAppServer {
   app.route('/api/v1', botsRoutes({ services, repos }));
   app.route('/api/v1', reportsRoutes({ services, repos }));
   app.route('/api/v1', broadcastsRoutes({ services, repos }));
-  app.route('/api/v1', adminRoutes({ services, repos }));
+  app.route('/api/v1', creditsRoutes({ services, repos }));
+  app.route('/api/v1', adminCreditsRoutes({ services, repos }));
+  app.route(
+    '/api/v1',
+    adminRoutes(resolveBot ? { services, repos, resolveBot } : { services, repos }),
+  );
 
   app.notFound((c) => {
     c.header('Cache-Control', 'no-store');

@@ -17,6 +17,7 @@ export const PUBLIC_BOT_COMMANDS: readonly BotCommand[] = [
   { command: 'start', description: 'เปิดเมนูหลัก / Open main menu' },
   { command: 'help', description: 'วิธีใช้งาน / How to use' },
   { command: 'files', description: 'ไฟล์ของฉัน / My files' },
+  { command: 'credits', description: 'เครดิตของฉัน / My credits' },
   { command: 'settings', description: 'ตั้งค่า / Settings' },
 ] as const;
 

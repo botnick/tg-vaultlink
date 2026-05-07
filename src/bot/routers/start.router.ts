@@ -23,6 +23,7 @@ import { sendCollectionPreview } from './collection.router.js';
 import { escapeHtml } from '../../utils/safeText.js';
 import { buildMainMenuKeyboard } from './main_menu.router.js';
 import { formatShareCode } from '../../utils/shareCodeFormat.js';
+import { chargeRedemption } from './_credit_charge.js';
 
 export function registerStartRouter(composer: Composer<AppContext>): void {
   composer.command('start', async (ctx) => {
@@ -84,19 +85,45 @@ export function registerStartRouter(composer: Composer<AppContext>): void {
         }
         throw err;
       }
-      await sendCollectionPreview(ctx, resolved.collection);
+
+      // Wave 9 — charge for opening the collection. No-op when the system
+      // is disabled, the owner is opening their own code, or the user is
+      // an admin (configurable).
+      const charge = await chargeRedemption(ctx, {
+        kind: 'collection_open',
+        referenceType: 'collection',
+        referenceId: resolved.collection.id,
+        ownerUserId: resolved.collection.owner_user_id,
+      });
+      if (!charge) return;
+
+      try {
+        await sendCollectionPreview(ctx, resolved.collection);
+      } catch (err) {
+        ctx.services.credits.refund(charge, String(err));
+        throw err;
+      }
+      // Reward the creator after a successful delivery.
+      ctx.services.credits.rewardReferral({
+        creatorUserId: resolved.collection.owner_user_id,
+        redeemerUserId: ctx.user.id,
+        referenceType: 'collection',
+        referenceId: resolved.collection.id,
+      });
       return;
     }
 
     // Single-file: route through FileService.decode for download bookkeeping
-    // and password gating.
+    // and password gating. Charge happens AFTER decode succeeds (we need the
+    // file_type for the per-type cost override) but BEFORE delivery so we
+    // can refund cleanly if Telegram fails.
+    let decoded;
     try {
-      const result = await ctx.services.file.decode({
+      decoded = await ctx.services.file.decode({
         user: ctx.user,
         rawCode,
         contextBot: ctx.bot,
       });
-      await deliverFile(ctx, result.file);
     } catch (err) {
       if (err instanceof AppError && err.code === ErrorCode.PASSWORD_REQUIRED) {
         // We don't know the file_type at this point without re-querying; show
@@ -109,5 +136,27 @@ export function registerStartRouter(composer: Composer<AppContext>): void {
       }
       throw err;
     }
+
+    const charge = await chargeRedemption(ctx, {
+      kind: 'decode',
+      referenceType: 'file',
+      referenceId: decoded.file.id,
+      ownerUserId: decoded.file.owner_user_id,
+      fileType: decoded.file.file_type,
+    });
+    if (!charge) return;
+
+    try {
+      await deliverFile(ctx, decoded.file);
+    } catch (err) {
+      ctx.services.credits.refund(charge, String(err));
+      throw err;
+    }
+    ctx.services.credits.rewardReferral({
+      creatorUserId: decoded.file.owner_user_id,
+      redeemerUserId: ctx.user.id,
+      referenceType: 'file',
+      referenceId: decoded.file.id,
+    });
   });
 }

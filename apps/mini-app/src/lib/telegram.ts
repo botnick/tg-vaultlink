@@ -56,6 +56,16 @@ export interface TgWebApp {
   showConfirm?(message: string, callback?: (ok: boolean) => void): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
+  /**
+   * Open a Telegram Stars / payment provider invoice inside the Mini App.
+   * Available since WebApp 6.1 (Bot API 6.1+). The callback fires once
+   * with the user's terminal status. We always pass a callback so we can
+   * resolve the returned Promise.
+   */
+  openInvoice?(
+    url: string,
+    callback?: (status: 'paid' | 'cancelled' | 'failed' | 'pending') => void,
+  ): void;
 }
 
 declare global {
@@ -180,4 +190,34 @@ export function showBackButton(handler: () => void): () => void {
 
 export function hideBackButton(): void {
   getWebApp()?.BackButton?.hide();
+}
+
+/* ----------------------------------------------------------------- *
+ * Stars / openInvoice bridge (Wave 9.2)
+ * ----------------------------------------------------------------- */
+
+export type InvoiceStatus = 'paid' | 'cancelled' | 'failed' | 'pending' | 'unsupported';
+
+/**
+ * Open the Telegram Stars payment sheet inline inside the Mini App. The
+ * Promise resolves to the terminal status reported by Telegram, or
+ * `'unsupported'` when running on an old client / outside Telegram.
+ *
+ * Usage:
+ *   const status = await openInvoice(invoiceLink);
+ *   if (status === 'paid') queryClient.invalidateQueries({ queryKey: qk.credits.summary });
+ */
+export function openInvoice(invoiceLink: string): Promise<InvoiceStatus> {
+  return new Promise((resolve) => {
+    const wa = getWebApp();
+    if (!wa?.openInvoice) {
+      resolve('unsupported');
+      return;
+    }
+    try {
+      wa.openInvoice(invoiceLink, (status) => resolve(status));
+    } catch {
+      resolve('unsupported');
+    }
+  });
 }

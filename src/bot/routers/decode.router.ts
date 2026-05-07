@@ -18,6 +18,7 @@ import { parseShareCode } from '../../utils/codeParser.js';
 import { AppError, ErrorCode } from '../../utils/errors.js';
 import { deliverFile } from './_delivery.js';
 import { escapeHtml } from '../../utils/safeText.js';
+import { chargeRedemption } from './_credit_charge.js';
 
 interface PreparedDecode {
   rawCode: string;
@@ -190,29 +191,73 @@ async function processOne(
     } catch (err) {
       return await handleAccessError(ctx, prepared, err, silent);
     }
+
+    const charge = await chargeRedemption(ctx, {
+      kind: 'collection_open',
+      referenceType: 'collection',
+      referenceId: resolved.collection.id,
+      ownerUserId: resolved.collection.owner_user_id,
+      silent,
+    });
+    if (!charge) return false;
+
     const { sendCollectionPreview } = await import('./collection.router.js');
-    await sendCollectionPreview(ctx, resolved.collection);
+    try {
+      await sendCollectionPreview(ctx, resolved.collection);
+    } catch (err) {
+      ctx.services.credits.refund(charge, String(err));
+      throw err;
+    }
+    ctx.services.credits.rewardReferral({
+      creatorUserId: resolved.collection.owner_user_id,
+      redeemerUserId: ctx.user.id,
+      referenceType: 'collection',
+      referenceId: resolved.collection.id,
+    });
     return true;
   }
 
   if (resolved && resolved.type === 'single_file') {
+    let decoded;
     try {
-      const decoded = await ctx.services.file.decode({
+      decoded = await ctx.services.file.decode({
         user: ctx.user,
         rawCode: prepared.rawCode,
         contextBot: ctx.bot,
         password: prepared.password,
       });
-      const decision = ctx.services.permission.canDownload(ctx.user, decoded.bot, decoded.file);
-      if (!decision.allowed) {
-        if (!silent) await ctx.reply(ctx.t('decode.permission_denied'));
-        return false;
-      }
-      await deliverFile(ctx, decoded.file);
-      return true;
     } catch (err) {
       return await handleAccessError(ctx, prepared, err, silent);
     }
+    const decision = ctx.services.permission.canDownload(ctx.user, decoded.bot, decoded.file);
+    if (!decision.allowed) {
+      if (!silent) await ctx.reply(ctx.t('decode.permission_denied'));
+      return false;
+    }
+
+    const charge = await chargeRedemption(ctx, {
+      kind: 'decode',
+      referenceType: 'file',
+      referenceId: decoded.file.id,
+      ownerUserId: decoded.file.owner_user_id,
+      fileType: decoded.file.file_type,
+      silent,
+    });
+    if (!charge) return false;
+
+    try {
+      await deliverFile(ctx, decoded.file);
+    } catch (err) {
+      ctx.services.credits.refund(charge, String(err));
+      throw err;
+    }
+    ctx.services.credits.rewardReferral({
+      creatorUserId: decoded.file.owner_user_id,
+      redeemerUserId: ctx.user.id,
+      referenceType: 'file',
+      referenceId: decoded.file.id,
+    });
+    return true;
   }
 
   // No match.

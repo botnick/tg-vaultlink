@@ -27,7 +27,12 @@ export interface IRateLimitRepository {
 }
 
 /** Supported rate-limit scopes; mirrors the `scope` column. */
-export type RateLimitScope = 'upload' | 'download' | 'add_bot' | 'report';
+export type RateLimitScope =
+  | 'upload'
+  | 'download'
+  | 'add_bot'
+  | 'report'
+  | 'crypto_invoice';
 
 export interface RateLimitDecision {
   /** `true` when this hit is within the per-window quota. */
@@ -92,6 +97,11 @@ export class RateLimitService {
         return { limit: this.config.ADD_BOT_LIMIT_PER_DAY, windowMs: RATE_LIMIT_WINDOWS.add_bot };
       case 'report':
         return { limit: this.config.REPORT_LIMIT_PER_HOUR, windowMs: RATE_LIMIT_WINDOWS.report };
+      case 'crypto_invoice':
+        return {
+          limit: this.config.CRYPTO_INVOICE_RATELIMIT_PER_MIN,
+          windowMs: RATE_LIMIT_WINDOWS.crypto_invoice,
+        };
     }
   }
 }

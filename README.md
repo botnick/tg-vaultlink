@@ -30,6 +30,8 @@ VaultLink turns any file or media bundle uploaded through Telegram into a short,
 - **Self-healing main bot row** — on every successful boot the encrypted token is re-synced from `.env`, `status` is reset to `active`, and `last_error` is cleared. The main bot row is also un-removable (the slash command and the Mini App API both refuse).
 - **High-throughput SQLite tuning** out of the box (32 MB page cache, 128 MB mmap window, WAL auto-checkpoint at 1000 pages, `PRAGMA optimize` on close) — fits a 1 GB container while serving thousands of concurrent users
 - **Per-request logging** in the Mini App API — every response carries an `X-Request-Id` header that's also echoed in the JSON body, so a 500 can be matched 1-to-1 to its server-side stack.
+- **Dynamic credit system (optional)** — `ENABLE_CREDITS=true` flips on a fully-toggleable economy. New users get a free starter bonus, every code-open costs credits, creators earn credits when others open their codes (referral viral loop), and admins can top up via Telegram Stars. Every cost / toggle / package is editable at runtime from `/admin → Credits` without a redeploy. Default is OFF (free-for-all mode), so existing deploys are unchanged until you opt in.
+- **Full-auto crypto payment gateway (USDT/USDC × TRX/BSC/ETH/TON)** — Wave 9.3 expands the matrix to four networks × two stablecoins on a single declarative registry (`src/services/crypto/chain.registry.ts`); add or remove a chain by editing one file. Users pick **network → token → amount**; the system issues an exact amount with a **unique decimal suffix** (e.g. `10.000072 USDT`) and watches the chain in the background — no tx-hash submission needed. Auto-detect anchors every match to the canonical token contract address (so a fake-token transfer to your address is never credited), checks recipient case-insensitively, and credits via `(chain, tx_hash) UNIQUE` + ledger `reference_id` UNIQUE so replay/duplicate is impossible. Confirmation tier per chain finality (TRX=1, TON=1, BSC=15, ETH=12), per-user concurrent-invoice cap (default 3) with **user cancel-and-retry**, per-user rate limit (default 5/min), and a worker-side dust filter. Operator wires per-network RPC URLs via `CRYPTO_{TRON,BSC,ETH,TON}_RPC_URL`; chains stay invisible until the URL is set. Admin can configure addresses / rates / confirmations per chain in the Mini App or `/admin_crypto`. Default OFF.
 
 ## Requirements
 
@@ -184,6 +186,78 @@ The variables below are the complete set declared in `src/config/env.ts` and mir
 | `MAX_COLLECTION_ITEMS`         | `100`   | yes      | Upper bound on items per collection; bounded `1..10000`.          |
 | `MAX_BULK_SEND_ITEMS`          | `50`    | yes      | Upper bound on items per bulk-send invocation; bounded `1..1000`. |
 
+### Credits
+
+Every value here is a BOOT default — runtime overrides live in the `settings` table and are edited from `/admin_credits` (no redeploy). Defaults below leave the system fully off; flip `ENABLE_CREDITS=true` and the bot meters every redemption, grants signup bonuses, awards referrals, and (optionally) accepts Telegram Stars top-ups. See `CHANGELOG.md` Wave 9 for the full surface.
+
+| Name                          | Default | Required | Description                                                                                |
+| ----------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------ |
+| `ENABLE_CREDITS`              | `false` | yes      | Master switch. Off = bot stays free-for-all (no balance UI, no charges).                   |
+| `CREDITS_SIGNUP_BONUS`        | `10`    | yes      | Credits granted on first interaction; idempotent via `users.credits_initialized`.          |
+| `CREDITS_COST_DECODE`         | `1`     | yes      | Default cost of opening a single-file code. Per-file-type override: `credits.cost_decode.<filetype>`. |
+| `CREDITS_COST_COLLECTION_OPEN`| `1`     | yes      | Cost of opening page 1 of a collection.                                                    |
+| `CREDITS_COST_COLLECTION_SEND`| `1`     | yes      | Base cost of `coll:send_remaining`. Add `credits.cost_collection_per_item` for per-file pricing. |
+| `CREDITS_REFERRAL_ENABLED`    | `true`  | yes      | When true, code creators earn credits each time someone else opens their code.             |
+| `CREDITS_REFERRAL_REWARD`     | `1`     | yes      | Credits granted to the creator per redemption.                                             |
+| `CREDITS_REFERRAL_DAILY_CAP`  | `200`   | yes      | Max referral credits a single creator can earn per UTC day; `0` = unlimited.               |
+| `CREDITS_REFERRAL_PAIR_LIFETIME_CAP` | `5` | yes | Anti-farm: same (creator, redeemer) pair can earn this many referrals EVER. `0` = off. |
+| `CREDITS_REFERRAL_PAIR_WINDOW_MINUTES` | `15` | yes | Anti-farm: velocity window in minutes. `0` = off. |
+| `CREDITS_REFERRAL_PAIR_WINDOW_MAX` | `2` | yes | Anti-farm: max referrals per pair within the window. |
+| `CREDITS_REFERRAL_REDEEMER_MIN_AGE_MINUTES` | `30` | yes | Anti-farm: redeemer account must mature this many minutes before triggering a referral. `0` = off. |
+| `CREDITS_TOPUP_ENABLED`       | `false` | yes      | Enables Telegram Stars top-up via `sendInvoice(currency='XTR')`.                           |
+| `CREDITS_BYPASS_FOR_OWNER`    | `true`  | yes      | When true, opening your own code is free.                                                  |
+| `CREDITS_BYPASS_FOR_ADMIN`    | `true`  | yes      | When true, admins (super_admin / ADMIN_IDs) decode for free.                               |
+
+### Crypto top-up (Wave 9.1)
+
+Self-custodial — the bot only stores a watch-only receiving address per chain. Verification is via on-chain RPC (trongrid for TRON, toncenter for TON) plus a `UNIQUE(chain, tx_hash)` ledger guarantee that prevents double-credit. Per-chain runtime config lives in the `settings` table; the env values below are BOOT defaults only.
+
+| Name                             | Default | Required | Description                                                                                |
+| -------------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------ |
+| `ENABLE_CRYPTO_TOPUP`            | `false` | yes      | Master switch for the entire crypto flow.                                                  |
+| `CRYPTO_INVOICE_TTL_MINUTES`     | `60`    | yes      | Invoice expiry; bounded `5..1440`.                                                         |
+| `CRYPTO_POLL_INTERVAL_SECONDS`   | `30`    | yes      | Worker poll cadence; bounded `5..600`.                                                     |
+| `CRYPTO_AMOUNT_TOLERANCE_BPS`    | `0`     | yes      | Allowed underpayment in basis points (10000 = 100%). `0` = strict.                         |
+| `CRYPTO_TRON_USDT_CONFIRMATIONS` | `19`    | yes      | TRON conf threshold (~1 min). Admin can override via `/admin_credit_set`.                  |
+| `CRYPTO_TRON_USDT_RATE`          | `100`   | yes      | Credits per 1 USDT on TRC-20.                                                              |
+| `CRYPTO_TON_NATIVE_CONFIRMATIONS`| `1`     | yes      | TON conf threshold.                                                                        |
+| `CRYPTO_TON_NATIVE_RATE`         | `30`    | yes      | Credits per 1 TON.                                                                         |
+| `CRYPTO_TON_USDT_CONFIRMATIONS`  | `1`     | yes      | USDT-TON jetton conf threshold.                                                            |
+| `CRYPTO_TON_USDT_RATE`           | `100`   | yes      | Credits per 1 USDT-TON.                                                                    |
+
+### Stars refund defense (Wave 9.2)
+
+Telegram lets a buyer dispute a Stars payment for up to 14 days. Without a defense, a hostile user could buy credits, redeem them for files, then refund and walk away with both. The bot listens for `message:refunded_payment` and applies a four-layer response:
+
+1. **Clawback** — original `topup` ledger row is reversed atomically; cached balance can go negative so further spending naturally fails via the existing overdraft check.
+2. **Time lock** — `users.spend_locked_until` is set proportional to Stars refunded.
+3. **Repeat-offender hard ban** — N refunds in a rolling window flips `is_banned`.
+4. **Admin override** — founders clear locks (and optionally write off the deficit) from the Mini App for legitimate disputes.
+
+| Name                                          | Default   | Required | Description                                                                                |
+| --------------------------------------------- | --------- | -------- | ------------------------------------------------------------------------------------------ |
+| `STARS_REFUND_LOCK_SECONDS_PER_STAR`          | `3600`    | yes      | Lock multiplier — `0` disables the time-lock layer entirely.                               |
+| `STARS_REFUND_LOCK_MAX_SECONDS`               | `2592000` | yes      | Hard ceiling on lock duration (default 30 days).                                           |
+| `STARS_REFUND_HARD_BAN_THRESHOLD`             | `3`       | yes      | Refund events inside the window before `is_banned` flips. `0` disables the layer.          |
+| `STARS_REFUND_HARD_BAN_WINDOW_DAYS`           | `30`      | yes      | Rolling-window length for the threshold above.                                             |
+| `MINI_APP_STARS_INVOICE_RATELIMIT_PER_MIN`    | `5`       | yes      | Per-user cap on `POST /credits/stars/invoice` to protect the bot's API quota.              |
+
+**Per-chain setup at runtime** (no redeploy required):
+
+```text
+# 1. Set the receiving address you control:
+/admin_crypto_address tron-usdt T...
+
+# 2. (optional) Provide an api key for higher rate limits:
+/admin_crypto_apikey tron-usdt <trongrid-key>
+
+# 3. Open the panel and toggle the chain on:
+/admin_crypto
+
+# 4. Flip the master switch on (one-time):
+/admin_credit_set credits.crypto.enabled true
+```
+
 ### Telegram limits
 
 | Name                                     | Default | Required | Description                                              |
@@ -216,6 +290,8 @@ The advertised public command surface is intentionally tiny — only what a casu
 /start    เปิดเมนูหลัก / Open main menu
 /help     วิธีใช้งาน / How to use (paginated tabs)
 /files    ไฟล์ของฉัน / My files
+/credits  ยอดและเติมเครดิต / Balance + top-up
+/uid      ดู Telegram user id ของคุณ / Show your Telegram id
 /settings ตั้งค่า / Settings
 ```
 
@@ -225,7 +301,7 @@ The full surface — by audience:
 
 | Audience           | Commands                                                                                                                                                                   |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Anyone             | `/start` `/help` `/files` `/bots` `/settings` `/cancel` `/del [CODE]` `/set_password [CODE] [pwd]` `/remove_password [CODE]` `/report [CODE] [reason]` `/terms` `/privacy` |
+| Anyone             | `/start` `/help` `/files` `/bots` `/settings` `/uid` `/credits` `/cancel` `/del [CODE]` `/set_password [CODE] [pwd]` `/remove_password [CODE]` `/report [CODE] [reason]` `/terms` `/privacy` |
 | Personal bot owner | `/add_bot [BOT_TOKEN]` `/remove_bot @username` `/mode public\|private` `/allow [user_id]` `/deny [user_id]` `/allow_upload [user_id]` `/deny_upload [user_id]` `/stats`    |
 | Bot moderator      | `/admin` (menu) `/admin_reports` (reports on bots you own) `/lock_file [CODE]` `/unlock_file [CODE]` `/delete_file [CODE]`                                                 |
 | Super admin only   | `/admin_stats` `/admin_bots` `/ban [user_id]` `/unban [user_id]` `/broadcast [message]`                                                                                    |

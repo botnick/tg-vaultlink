@@ -26,6 +26,8 @@ import { RateLimitRepository } from '../../src/repositories/rateLimit.repository
 import { CollectionRepository } from '../../src/repositories/collection.repository.js';
 import { CollectionDraftRepository } from '../../src/repositories/collectionDraft.repository.js';
 import { BroadcastRepository } from '../../src/repositories/broadcast.repository.js';
+import { CreditRepository } from '../../src/repositories/credit.repository.js';
+import { CryptoInvoiceRepository } from '../../src/repositories/cryptoInvoice.repository.js';
 
 import type { Config } from '../../src/config/env.js';
 import type { BotMode, ManagedBotRow, UserRole, UserRow } from '../../src/types/index.js';
@@ -43,6 +45,8 @@ export interface TestRepos {
   collections: CollectionRepository;
   collectionDrafts: CollectionDraftRepository;
   broadcasts: BroadcastRepository;
+  credits: CreditRepository;
+  cryptoInvoices: CryptoInvoiceRepository;
 }
 
 export interface TestEnv {
@@ -118,7 +122,61 @@ function defaultConfig(): Config {
     RUNNER_CONCURRENCY: 200,
     CHILD_BOT_MAX_PARALLEL_STARTS: 16,
     BROADCAST_DELAY_MS: 50,
-  };
+    // Wave 9 — credit-system static defaults. Tests that exercise the
+    // credit flow flip `ENABLE_CREDITS` via the overrides param.
+    ENABLE_CREDITS: false,
+    CREDITS_SIGNUP_BONUS: 10,
+    CREDITS_COST_DECODE: 1,
+    CREDITS_COST_COLLECTION_OPEN: 1,
+    CREDITS_COST_COLLECTION_SEND: 1,
+    CREDITS_REFERRAL_ENABLED: true,
+    CREDITS_REFERRAL_REWARD: 1,
+    CREDITS_REFERRAL_DAILY_CAP: 200,
+    CREDITS_REFERRAL_PAIR_LIFETIME_CAP: 5,
+    CREDITS_REFERRAL_PAIR_WINDOW_MINUTES: 15,
+    CREDITS_REFERRAL_PAIR_WINDOW_MAX: 2,
+    CREDITS_REFERRAL_REDEEMER_MIN_AGE_MINUTES: 0,
+    CREDITS_TOPUP_ENABLED: false,
+    CREDITS_BYPASS_FOR_OWNER: true,
+    CREDITS_BYPASS_FOR_ADMIN: true,
+    ENABLE_CRYPTO_TOPUP: false,
+    CRYPTO_INVOICE_TTL_MINUTES: 60,
+    CRYPTO_POLL_INTERVAL_SECONDS: 15,
+    CRYPTO_AMOUNT_TOLERANCE_BPS: 0,
+    CRYPTO_TRON_RPC_URL: '',
+    CRYPTO_BSC_RPC_URL: '',
+    CRYPTO_ETH_RPC_URL: '',
+    CRYPTO_TON_RPC_URL: '',
+    CRYPTO_TRON_USDT_CONFIRMATIONS: 1,
+    CRYPTO_TRON_USDT_RATE: 100,
+    CRYPTO_TRON_USDC_CONFIRMATIONS: 1,
+    CRYPTO_TRON_USDC_RATE: 100,
+    CRYPTO_BSC_USDT_CONFIRMATIONS: 15,
+    CRYPTO_BSC_USDT_RATE: 100,
+    CRYPTO_BSC_USDC_CONFIRMATIONS: 15,
+    CRYPTO_BSC_USDC_RATE: 100,
+    CRYPTO_ETH_USDT_CONFIRMATIONS: 12,
+    CRYPTO_ETH_USDT_RATE: 100,
+    CRYPTO_ETH_USDC_CONFIRMATIONS: 12,
+    CRYPTO_ETH_USDC_RATE: 100,
+    CRYPTO_TON_NATIVE_CONFIRMATIONS: 1,
+    CRYPTO_TON_NATIVE_RATE: 30,
+    CRYPTO_TON_USDT_CONFIRMATIONS: 1,
+    CRYPTO_TON_USDT_RATE: 100,
+    CRYPTO_TON_USDC_CONFIRMATIONS: 1,
+    CRYPTO_TON_USDC_RATE: 100,
+    CRYPTO_MAX_ACTIVE_INVOICES_PER_USER: 3,
+    CRYPTO_INVOICE_RATELIMIT_PER_MIN: 5,
+    CRYPTO_DUST_THRESHOLD_USD: 0,
+    // Wave 9.2 — Stars refund defense. Defaults sized for tests: 60 s/Star
+    // makes a 10-Star refund result in a 600 s lock — easy to exercise
+    // without sleeping for hours.
+    STARS_REFUND_LOCK_SECONDS_PER_STAR: 60,
+    STARS_REFUND_LOCK_MAX_SECONDS: 30 * 24 * 3600,
+    STARS_REFUND_HARD_BAN_THRESHOLD: 3,
+    STARS_REFUND_HARD_BAN_WINDOW_DAYS: 30,
+    MINI_APP_STARS_INVOICE_RATELIMIT_PER_MIN: 5,
+  } as Config;
   return cfg;
 }
 
@@ -143,7 +201,18 @@ export function buildTestEnv(overrides?: Partial<Config>): TestEnv {
   const migrationsDir = path.resolve(here, '../../src/db/migrations');
   // Apply every migration found on disk in lexicographic order so tests get
   // the same schema the runtime migration runner produces.
-  const migrationFiles = ['001_init.sql', '002_collections.sql', '003_broadcasts.sql'];
+  const migrationFiles = [
+    '001_init.sql',
+    '002_collections.sql',
+    '003_broadcasts.sql',
+    '004_credits.sql',
+    '005_crypto_invoices.sql',
+    '006_crypto_payment_uri.sql',
+    '007_topup_dedupe_index.sql',
+    '008_stars_refunds.sql',
+    '009_reports_polymorphic.sql',
+    '010_reports_categories.sql',
+  ];
   for (const name of migrationFiles) {
     const sql = readFileSync(path.resolve(migrationsDir, name), 'utf8');
     db.exec(sql);
@@ -161,6 +230,8 @@ export function buildTestEnv(overrides?: Partial<Config>): TestEnv {
     collections: new CollectionRepository(db),
     collectionDrafts: new CollectionDraftRepository(db),
     broadcasts: new BroadcastRepository(db),
+    credits: new CreditRepository(db),
+    cryptoInvoices: new CryptoInvoiceRepository(db),
   };
 
   const config = Object.freeze({ ...defaultConfig(), ...(overrides ?? {}) }) as Config;

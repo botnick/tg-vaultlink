@@ -17,8 +17,10 @@ import { apiGet } from '../lib/api.js';
 import { qk } from '../lib/queryKeys.js';
 import { useT } from '../lib/i18n.js';
 import type { AdminStats } from '../types/api.js';
+import { adminStatsApi } from '../lib/adminStats.api.js';
 import {
   BotsIcon,
+  CreditsIcon,
   FilesIcon,
   FlagIcon,
   ListIcon,
@@ -73,11 +75,66 @@ function GlassStat({ label, value }: { label: string; value: number | string }):
   );
 }
 
+/**
+ * Tiny inline-SVG sparkline that doesn't pull in a chart library. The
+ * Mini App style guide insists on a slim bundle, so the 7-day series is
+ * rendered as 7 vertical bars with `currentColor` so dark mode just
+ * works.
+ */
+function Sparkline({
+  series,
+}: {
+  series: ReadonlyArray<{ day: string; credits: number; count: number }>;
+}): JSX.Element {
+  const max = Math.max(1, ...series.map((d) => d.credits));
+  return (
+    <svg
+      role="img"
+      aria-label="7-day topup credits"
+      viewBox="0 0 70 22"
+      className="h-8 w-full text-tg-link"
+      preserveAspectRatio="none"
+    >
+      {series.map((d, i) => {
+        const h = Math.max(1, Math.round((d.credits / max) * 20));
+        return (
+          <rect
+            key={d.day}
+            x={i * 10 + 1}
+            y={22 - h}
+            width={8}
+            height={h}
+            rx={1.5}
+            fill="currentColor"
+            opacity={d.credits === 0 ? 0.18 : 0.85}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 export function AdminDashboard(): JSX.Element {
   const t = useT();
   const query = useQuery({
     queryKey: qk.admin.stats,
     queryFn: () => apiGet<AdminStats>('/admin/stats'),
+    staleTime: 30_000,
+  });
+  const paymentsQuery = useQuery({
+    queryKey: ['admin', 'stats', 'payments'] as const,
+    queryFn: () => adminStatsApi.payments(),
+    staleTime: 30_000,
+  });
+  const cryptoQuery = useQuery({
+    queryKey: ['admin', 'stats', 'crypto'] as const,
+    queryFn: () => adminStatsApi.crypto(),
+    staleTime: 30_000,
+  });
+  const recentQuery = useQuery({
+    queryKey: ['admin', 'stats', 'recent'] as const,
+    queryFn: () => adminStatsApi.recent(10),
+    staleTime: 30_000,
   });
 
   return (
@@ -173,7 +230,135 @@ export function AdminDashboard(): JSX.Element {
             title={t('admin.shortcuts.bots')}
             subtitle={t('admin.shortcuts.bots_subtitle')}
           />
+          <ShortcutRow
+            to="/admin/credits"
+            icon={<CreditsIcon size={18} />}
+            iconBg="bg-gradient-to-br from-brand-cyan to-brand-violet"
+            title={t('admin_credits.shortcut')}
+          />
+          <ShortcutRow
+            to="/admin/crypto"
+            icon={<CreditsIcon size={18} />}
+            iconBg="bg-gradient-to-br from-brand-amber to-brand-fuchsia"
+            title={t('admin_credits.crypto_shortcut')}
+          />
         </div>
+
+        {/* Revenue card — Stars/credit funnel + 7-day sparkline */}
+        {paymentsQuery.data && (
+          <Card padding="md" className="fade-up">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wider text-tg-hint">
+                {t('admin.revenue.title')}
+              </p>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-[11px] text-tg-subtitle-text">
+                  {t('admin.revenue.lifetime_credits')}
+                </p>
+                <p className="text-lg font-bold tabular-nums text-tg-text">
+                  +{paymentsQuery.data.topup.lifetimeCredits}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-tg-subtitle-text">
+                  {t('admin.revenue.refunds')}
+                </p>
+                <p className="text-lg font-bold tabular-nums text-tg-destructive-text">
+                  −{paymentsQuery.data.refunds.lifetimeCreditsClawedBack}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-tg-subtitle-text">
+                  {t('admin.revenue.last7d_credits')}
+                </p>
+                <p className="text-base font-semibold tabular-nums text-tg-text">
+                  +{paymentsQuery.data.topup.last7dCredits}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-tg-subtitle-text">
+                  {t('admin.revenue.last7d_refunds')}
+                </p>
+                <p className="text-base font-semibold tabular-nums text-tg-text">
+                  {paymentsQuery.data.refunds.last7dCount}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3">
+              <Sparkline series={paymentsQuery.data.series} />
+            </div>
+          </Card>
+        )}
+
+        {/* Health card — operator-relevant lifecycle counters */}
+        {(query.data || cryptoQuery.data) && (
+          <Card padding="md" className="fade-up">
+            <p className="text-xs uppercase tracking-wider text-tg-hint">
+              {t('admin.health.title')}
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-tg-subtitle-text">{t('admin.health.banned_users')}</span>
+                <span className="font-semibold tabular-nums">
+                  {query.data?.bannedUsers ?? 0}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-tg-subtitle-text">{t('admin.health.super_admins')}</span>
+                <span className="font-semibold tabular-nums">
+                  {query.data?.superAdmins ?? 0}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-tg-subtitle-text">
+                  {t('admin.health.spend_locked')}
+                </span>
+                <span className="font-semibold tabular-nums">
+                  {query.data?.spendLockedUsers ?? 0}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-tg-subtitle-text">
+                  {t('admin.health.pending_crypto')}
+                </span>
+                <span className="font-semibold tabular-nums">
+                  {query.data?.pendingCryptoInvoices ?? cryptoQuery.data?.pending ?? 0}
+                </span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Recent activity */}
+        {recentQuery.data && recentQuery.data.items.length > 0 && (
+          <Card padding="md" className="fade-up">
+            <p className="text-xs uppercase tracking-wider text-tg-hint">
+              {t('admin.recent.title')}
+            </p>
+            <ul className="mt-2 divide-y divide-black/5 dark:divide-white/5">
+              {recentQuery.data.items.slice(0, 8).map((row) => (
+                <li
+                  key={row.id}
+                  className="flex items-center justify-between py-2 text-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-tg-text">{row.action}</p>
+                    <p className="truncate text-[11px] text-tg-subtitle-text">
+                      {row.actor?.username
+                        ? `@${row.actor.username}`
+                        : (row.actor?.first_name ?? '—')}
+                    </p>
+                  </div>
+                  <p className="ml-2 shrink-0 text-[11px] text-tg-subtitle-text tabular-nums">
+                    {row.created_at.replace('T', ' ').slice(5, 16)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
       </div>
     </Layout>
   );

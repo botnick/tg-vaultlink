@@ -27,6 +27,8 @@ import { RateLimitRepository } from './repositories/rateLimit.repository.js';
 import { CollectionRepository } from './repositories/collection.repository.js';
 import { CollectionDraftRepository } from './repositories/collectionDraft.repository.js';
 import { BroadcastRepository } from './repositories/broadcast.repository.js';
+import { CreditRepository } from './repositories/credit.repository.js';
+import { CryptoInvoiceRepository } from './repositories/cryptoInvoice.repository.js';
 
 import { AuditService } from './services/audit.service.js';
 import { SettingsService } from './services/settings.service.js';
@@ -39,6 +41,12 @@ import { ReportService } from './services/report.service.js';
 import { ShareService } from './services/share.service.js';
 import { BroadcastService } from './services/broadcast.service.js';
 import { BroadcastWorker } from './services/broadcast.worker.js';
+import { CreditService } from './services/credit.service.js';
+import { CryptoTopupService } from './services/crypto/cryptoTopup.service.js';
+import { PaymentsService } from './services/payments.service.js';
+import { CryptoTopupWorker } from './services/crypto/cryptoTopup.worker.js';
+import { buildAdapterMap } from './services/crypto/chain.registry.js';
+import { CRYPTO_SETTING_KEYS } from './services/crypto/cryptoTopup.service.js';
 
 import { bootstrapMainBot, defaultGetMeFn } from './bot/mainBot.js';
 import { ChildBotManager } from './bot/childBotManager.js';
@@ -73,6 +81,8 @@ export async function startApp(): Promise<AppHandle> {
     collections: new CollectionRepository(db),
     collectionDrafts: new CollectionDraftRepository(db),
     broadcasts: new BroadcastRepository(db),
+    credits: new CreditRepository(db),
+    cryptoInvoices: new CryptoInvoiceRepository(db),
   };
 
   // 3) Services (in dependency order).
@@ -83,7 +93,7 @@ export async function startApp(): Promise<AppHandle> {
   const permission = new PermissionService(repos.permissions, user, config, repos.bots);
   const file = new FileService(repos.files, repos.bots, audit, config);
   const bot = new BotService(repos.bots, audit, config, defaultGetMeFn);
-  const report = new ReportService(repos.reports, repos.files, audit, config);
+  const report = new ReportService(repos.reports, repos.files, repos.collections, audit, config);
   const share = new ShareService({
     files: repos.files,
     bots: repos.bots,
@@ -93,7 +103,35 @@ export async function startApp(): Promise<AppHandle> {
     config,
   });
   const broadcast = new BroadcastService(repos.broadcasts, repos.bots, permission, audit, config);
+  const credits = new CreditService({
+    credits: repos.credits,
+    users: repos.users,
+    settings,
+    audit,
+    config,
+  });
 
+  // Wave 9.3 — every chain×token combo is declared in
+  // `src/services/crypto/chain.registry.ts`. Adding or removing a chain is
+  // a one-line edit there; the wiring here just iterates. Adapters that
+  // depend on env-supplied RPC URLs (BSC, ETH) silently no-op when the
+  // operator hasn't configured their endpoint, keeping the matrix
+  // pluggable without ceremony.
+  const cryptoAdapters = buildAdapterMap({ config, settings });
+
+  const crypto = new CryptoTopupService({
+    invoices: repos.cryptoInvoices,
+    settings,
+    audit,
+    credits,
+    config,
+    adapters: cryptoAdapters,
+    rateLimit,
+  });
+
+  // payments is wired AFTER the main bot is bootstrapped — it needs the
+  // live `bot.api` for createInvoiceLink + refundStarPayment. We attach
+  // it lazily by mutating `services` once the bot is ready.
   const services: AppServices = {
     file,
     bot,
@@ -105,7 +143,15 @@ export async function startApp(): Promise<AppHandle> {
     audit,
     share,
     broadcast,
+    credits,
+    crypto,
+    // Sealed in below once `main` is built. Cast keeps the type honest at
+    // the property level while we defer construction.
+    payments: undefined as unknown as PaymentsService,
   };
+
+  // Touch CRYPTO_SETTING_KEYS so the import is preserved against tree-shake.
+  void CRYPTO_SETTING_KEYS;
 
   // 4) Optional webhook listener — built once when TELEGRAM_UPDATE_MODE=webhook
   // so both the main bot and every child bot can share one HTTP port. In
@@ -131,6 +177,18 @@ export async function startApp(): Promise<AppHandle> {
     repos,
     childManager,
   });
+
+  // Wave 9.2 — payments service can now be constructed against the live
+  // bot.api and folded into the services bundle so subsequent consumers
+  // (Mini App routes, admin refund flow) see a fully-populated AppServices.
+  const payments = new PaymentsService({
+    botApi: main.bot.api,
+    config,
+    credits,
+    audit,
+    rateLimitRepo: repos.rateLimit,
+  });
+  (services as { payments: PaymentsService }).payments = payments;
 
   type AllowedUpdate = Exclude<keyof Update, 'update_id'>;
   const allowedUpdates = [...config.BOT_POLLING_ALLOWED_UPDATES] as AllowedUpdate[];
@@ -350,6 +408,15 @@ export async function startApp(): Promise<AppHandle> {
   });
   broadcastWorker.start();
 
+  // Wave 9.1 — crypto top-up poller. Stays idle while ENABLE_CRYPTO_TOPUP
+  // is false (every tick short-circuits at `service.isEnabled()`).
+  const cryptoWorker = new CryptoTopupWorker({
+    service: crypto,
+    invoices: repos.cryptoInvoices,
+    audit,
+  });
+  cryptoWorker.start();
+
   // 9) Optionally start the Mini App backend. The module is loaded
   // dynamically so a misconfigured Mini App build cannot block the bot's
   // hot-path bootstrap.
@@ -357,7 +424,19 @@ export async function startApp(): Promise<AppHandle> {
   if (config.ENABLE_MINI_APP) {
     try {
       const mod = await import('./miniapp/server.js');
-      const server = mod.createMiniAppServer({ config, services, repos });
+      const server = mod.createMiniAppServer({
+        config,
+        services,
+        repos,
+        // Same resolver shape the broadcast worker uses — main bot is
+        // looked up by reference, child bots by id. Wiring it here means
+        // the Reports admin queue can forward reported content from the
+        // owning bot to the moderator's chat.
+        resolveBot: (botId: number) => {
+          if (botId === main.record.id) return main.bot;
+          return childManager.getByBotId(botId);
+        },
+      });
       await server.start();
       miniAppHandle = server;
       log.info('mini-app server started');
@@ -403,6 +482,12 @@ export async function startApp(): Promise<AppHandle> {
       broadcastWorker.stop();
     } catch (err) {
       log.warn({ err }, 'failed to stop broadcast worker');
+    }
+
+    try {
+      cryptoWorker.stop();
+    } catch (err) {
+      log.warn({ err }, 'failed to stop crypto worker');
     }
 
     try {

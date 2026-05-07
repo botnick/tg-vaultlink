@@ -15,15 +15,23 @@ import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context.js';
 import { isSupportedLocale } from '../../utils/i18n.js';
 
-function settingsKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().text('🇹🇭 ภาษาไทย', 'cb-locale:th').text('🇬🇧 English', 'cb-locale:en');
+function settingsKeyboard(ctx: AppContext): InlineKeyboard {
+  const kb = new InlineKeyboard()
+    .text('🇹🇭 ภาษาไทย', 'cb-locale:th')
+    .text('🇬🇧 English', 'cb-locale:en');
+  // Wave 9 — credits panel entry. Only surfaces when the system is on so
+  // disabled mode has zero footprint in the UI.
+  if (ctx.services.credits.isEnabled()) {
+    kb.row().text(ctx.t('credits.balance_button'), 'credit:balance');
+  }
+  return kb;
 }
 
 export function registerSettingsRouter(composer: Composer<AppContext>): void {
   composer.command('settings', async (ctx) => {
     await ctx.reply(ctx.t('settings.header'), {
       parse_mode: 'HTML',
-      reply_markup: settingsKeyboard(),
+      reply_markup: settingsKeyboard(ctx),
     });
   });
 
@@ -55,6 +63,6 @@ export function registerSettingsRouter(composer: Composer<AppContext>): void {
 export async function handleSettingsCommand(ctx: AppContext): Promise<void> {
   await ctx.reply(ctx.t('settings.header'), {
     parse_mode: 'HTML',
-    reply_markup: settingsKeyboard(),
+    reply_markup: settingsKeyboard(ctx),
   });
 }
