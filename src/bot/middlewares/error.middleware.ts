@@ -111,12 +111,13 @@ export function installErrorHandler(bot: Bot<AppContext>, config: Config): void 
     }
 
     // Telegram-side "bot can't reach this chat" errors (user blocked, kicked,
-    // deactivated). These are normal user behaviour; logging them at error
-    // pollutes the alerting feed AND attempting to reply would just hit the
-    // same wall and produce another error log line.
+    // deactivated). These are normal user behaviour — not bugs. Log at
+    // `info` so they remain searchable/observable but don't pollute the
+    // warn-level alerting feed. Replying would hit the same wall and
+    // produce another error log line, so we drop the response.
     if (isUnreachableChatError(cause)) {
-      log.warn(
-        { err: cause, updateId },
+      log.info(
+        { updateId, errCode: (cause as { error_code?: number }).error_code ?? null },
         'bot handler: chat unreachable (user blocked / deactivated / kicked)',
       );
       return;

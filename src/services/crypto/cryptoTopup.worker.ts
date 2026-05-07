@@ -129,10 +129,30 @@ export class CryptoTopupWorker {
           }
         }
       } catch (err) {
-        log.warn(
-          { err, invoiceId: invoice.id, chain: invoice.chain },
-          'crypto worker: invoice poll failed',
-        );
+        // Network resets (ECONNRESET / fetch failed / read timeout) are
+        // routine on long-running RPC clients — TronGrid / toncenter
+        // recycle TLS connections under load. The worker just retries on
+        // the next tick, so log at debug level to keep the warn feed
+        // signal-rich. RPC-level errors that the adapter has already
+        // wrapped in `AppError(CRYPTO_RPC_ERROR)` carry an explicit code
+        // we can surface; everything else stays at debug.
+        const code =
+          err instanceof AppError && err.code === ErrorCode.CRYPTO_RPC_ERROR
+            ? 'rpc_error'
+            : isTransientNetworkError(err)
+              ? 'transient_network'
+              : 'unknown';
+        if (code === 'unknown') {
+          log.warn(
+            { err, invoiceId: invoice.id, chain: invoice.chain },
+            'crypto worker: invoice poll failed',
+          );
+        } else {
+          log.debug(
+            { invoiceId: invoice.id, chain: invoice.chain, code },
+            'crypto worker: invoice poll skipped (transient)',
+          );
+        }
       }
     }
     return { polled, confirmed, expired, discovered };
@@ -417,6 +437,46 @@ function toBaseUnitsSafe(amount: string, decimals: number): bigint {
   const [whole, fraction = ''] = trimmed.split('.');
   const padded = (fraction + '0'.repeat(decimals)).slice(0, decimals);
   return BigInt((whole ?? '0') + padded);
+}
+
+/**
+ * Recognise the routine "blip" class of network errors that bubble out of
+ * `fetch`/undici when an RPC provider recycles a TLS connection or rate-
+ * limits us briefly. The worker handles these by retrying on the next tick,
+ * so they don't deserve a warn-level log line.
+ */
+function isTransientNetworkError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  // undici TypeErrors wrap the syscall in `cause`.
+  const cause = (err as { cause?: unknown }).cause;
+  const messages = [
+    (err as { message?: string }).message ?? '',
+    typeof cause === 'object' && cause !== null
+      ? ((cause as { message?: string }).message ?? '')
+      : '',
+  ];
+  const codes = [
+    (err as { code?: string }).code,
+    typeof cause === 'object' && cause !== null
+      ? (cause as { code?: string }).code
+      : undefined,
+  ];
+  const transientCodes = new Set([
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'ECONNABORTED',
+    'EPIPE',
+    'ENETRESET',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'UND_ERR_SOCKET',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_HEADERS_TIMEOUT',
+  ]);
+  if (codes.some((c) => typeof c === 'string' && transientCodes.has(c))) return true;
+  return messages.some((m) =>
+    /ECONNRESET|fetch failed|socket hang up|other side closed|timeout|ETIMEDOUT|aborted/i.test(m),
+  );
 }
 
 interface InvoiceMetadata {
